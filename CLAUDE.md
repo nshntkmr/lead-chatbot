@@ -1,6 +1,6 @@
 # CLAUDE.md — ACO Data Assistant
 
-Login-protected chat app where actuaries / finance leaders ask Claude questions about CMS ACO workbook extracts (LEAD and MSSP, one row per TIN). FastAPI + SSE streaming, SQLite (users, chats, usage ledger), DuckDB read-only warehouse built from `data/*.csv|xlsx`, Anthropic SDK tool-use loop. Plain HTML/JS front end in `static/`. Read `README.md` first; `TESTING.md` holds golden answers computed from the raw CSVs.
+Login-protected chat app where actuaries / finance leaders ask Claude questions about CMS ACO workbook extracts (LEAD and MSSP, one row per TIN). FastAPI + SSE streaming, SQLite (users, chats, usage ledger), DuckDB read-only warehouse built from `data/*.csv|xlsx`, Anthropic SDK tool-use loop. Plain HTML/JS front end in `static/`. **Read `docs/PROJECT_CONTEXT.md` first** — the full handover: end users, every file, the two datasets, the column dictionary, verified math, history of fixes, open items. `README.md` is the operator guide; `TESTING.md` holds golden answers computed from the raw CSVs.
 
 ## Map
 
