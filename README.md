@@ -65,7 +65,7 @@ python -m scripts.manage_users remove <username>
 python -m scripts.manage_users list
 ```
 
-Passwords are stored as bcrypt hashes in `app.db`. Sessions are signed httpOnly cookies that last 12 hours by default. After 8 failed sign-ins, an IP address is locked out for 15 minutes. Each user only sees their own chat history.
+Passwords are stored as bcrypt hashes in `app.db`. Sessions are signed httpOnly cookies that last 12 hours by default. After 8 failed sign-ins, an IP address is locked out for 15 minutes; the count is kept in `app.db`, so it is shared by every worker process and survives a restart. Behind a reverse proxy set `TRUSTED_PROXY_HOPS` (see Deploying), otherwise all users share the proxy's address and one person's typos lock everyone out. Each user only sees their own chat history.
 
 ## Updating the data
 
@@ -155,7 +155,7 @@ The column list for the current file is about 15k tokens. It's prompt-cached, so
   - The image contains code and the small versioned files only (domain notes, column notes, dictionary, suggestions). **The CSV extracts are never copied into it**: mount the folder that holds them at `/app/source` (read-only is fine).
   - `/app/state` holds everything the app writes: `app.db` (users, chats, usage) and `warehouse.duckdb`, which is built from `/app/source` on first start and rebuilt when an extract is newer. Mount a persistent volume there.
   - Set `SECRET_KEY` in the environment, otherwise sessions are signed with a key that is lost when the container is replaced.
-- **Azure:** the same image runs on Azure Container Apps or App Service for Containers. Store the Claude key and `SECRET_KEY` as secrets, mount persistent storage at `/app/state` and the extracts at `/app/source`, and set `COOKIE_SECURE=true` behind HTTPS.
+- **Azure:** the same image runs on Azure Container Apps or App Service for Containers. Store the Claude key and `SECRET_KEY` as secrets, mount persistent storage at `/app/state` and the extracts at `/app/source`, and set `COOKIE_SECURE=true` behind HTTPS. Set `TRUSTED_PROXY_HOPS=1` (the platform's ingress is one proxy; add one for each further layer such as Front Door or Application Gateway) so the login lockout counts each user's own address. Leave it at 0 when users connect to the app directly: the forwarded-address header is then ignored, because a client can forge it.
 - **Single sign-on:** login is handled in `app/main.py` (`/api/login` + `current_user`). To use Microsoft Entra ID instead of local passwords, put the app behind App Service Authentication ("Easy Auth") and read the `X-MS-CLIENT-PRINCIPAL-NAME` header in `current_user`.
 
 ## Working on this project with Claude Code

@@ -9,7 +9,9 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -97,6 +99,72 @@ def run() -> list[tuple[str, bool, str]]:
             main.runtime.clear()
             main.runtime.update(saved_runtime)
         check("chat handler: a second request for the same chat gets 409 before any stream starts", second, 409)
+
+        # ---- login lockout: counted in app.db, per real client address ---------------------------------------
+        from starlette.requests import Request
+        from starlette.responses import Response
+
+        def request(peer: str, forwarded: str | None = None) -> Request:
+            headers = [(b"x-forwarded-for", forwarded.encode())] if forwarded else []
+            return Request({"type": "http", "method": "POST", "path": "/api/login", "headers": headers, "client": (peer, 50000)})
+
+        check("lockout: 8 attempts are let through and the 9th is refused",
+              [store.begin_login_attempt("198.51.100.1", 8, 900) for _ in range(9)], [True] * 8 + [False])
+        check("lockout: another address is not affected", store.begin_login_attempt("198.51.100.2", 8, 900), True)
+        child = subprocess.run(
+            [sys.executable, "-c", "from app import store; print(store.begin_login_attempt('198.51.100.1', 8, 900))"],
+            capture_output=True, text=True, timeout=120, cwd=str(Path(__file__).parent.parent),
+            env=dict(os.environ, APP_DB_PATH=str(config.APP_DB_PATH), SECRET_KEY="eval"))
+        check("lockout: a second worker process sees the same lock", child.stdout.strip(), "False")
+        store.clear_login_attempts("198.51.100.1")
+        check("lockout: a successful sign-in clears the count", store.begin_login_attempt("198.51.100.1", 8, 900), True)
+        check("lockout: it lifts once the window has passed",
+              (store.begin_login_attempt("198.51.100.3", 1, 0.3), store.begin_login_attempt("198.51.100.3", 1, 0.3),
+               time.sleep(0.4), store.begin_login_attempt("198.51.100.3", 1, 0.3)), (True, False, None, True))
+        results: list[bool] = []
+        burst = [threading.Thread(target=lambda: results.append(store.begin_login_attempt("198.51.100.4", 8, 900)))
+                 for _ in range(30)]
+        [t.start() for t in burst]
+        [t.join() for t in burst]
+        check("lockout: 30 guesses arriving at once still let only 8 through", sum(results), 8)
+
+        codes = []
+        for _ in range(9):
+            try:
+                main.login(main.LoginIn(username="eval", password="wrong-guess"), request("203.0.113.9"), Response())
+                codes.append(200)
+            except HTTPException as e:
+                codes.append(e.status_code)
+        check("login handler: eight wrong passwords get 401, the ninth gets 429", codes, [401] * 8 + [429])
+        try:
+            main.login(main.LoginIn(username="eval", password="not-a-real-password"), request("203.0.113.9"), Response())
+            locked = "signed in"
+        except HTTPException as e:
+            locked = e.status_code
+        check("login handler: while locked out, even the right password is refused", locked, 429)
+        ok = main.login(main.LoginIn(username="eval", password="not-a-real-password"), request("203.0.113.10"), Response())
+        check("login handler: the right password from another address signs in", ok, {"ok": True})
+
+        saved_hops = config.TRUSTED_PROXY_HOPS
+        try:
+            config.TRUSTED_PROXY_HOPS = 0
+            check("client address: directly connected, a forged X-Forwarded-For is ignored",
+                  main.client_ip(request("203.0.113.9", "1.2.3.4")), "203.0.113.9")
+            config.TRUSTED_PROXY_HOPS = 1
+            check("client address: behind one proxy, the entry the proxy added is used, not the one the client sent",
+                  main.client_ip(request("10.0.0.5", "1.2.3.4, 203.0.113.7")), "203.0.113.7")
+            check("client address: a port is stripped (Azure App Service sends ip:port)",
+                  main.client_ip(request("10.0.0.5", "203.0.113.7:51234")), "203.0.113.7")
+            check("client address: IPv6 with and without a port",
+                  (main.client_ip(request("10.0.0.5", "[2001:db8::1]:443")), main.client_ip(request("10.0.0.5", "2001:db8::1"))),
+                  ("2001:db8::1", "2001:db8::1"))
+            check("client address: no header from the proxy falls back to the peer",
+                  main.client_ip(request("10.0.0.5")), "10.0.0.5")
+            config.TRUSTED_PROXY_HOPS = 2
+            check("client address: behind two proxies, the second entry from the right",
+                  main.client_ip(request("10.0.0.5", "1.2.3.4, 203.0.113.7, 10.0.0.9")), "203.0.113.7")
+        finally:
+            config.TRUSTED_PROXY_HOPS = saved_hops
 
     # ---- warehouse rebuild follows the source files ----------------------------------------------------------
     with _Temp() as d:

@@ -28,7 +28,7 @@ Login-protected chat app where actuaries / finance leaders ask Claude questions 
 - Enforce behaviour in code or tool output before adding a prompt rule: tool results use the words users should read (`room_under_target_usd`, not headroom/slack), and limits are applied by the tool, not requested in the prompt.
 - Data CSVs are loaded by DuckDB's own reader (`_load_csv`), not pandas, so memory stays flat at any row count. One row per TIN is assumed throughout: files of one program with the same header load as one table, and `build_spec` refuses (with a message the user sees) a program with two headline tables or a repeated TIN rather than computing on part of the data.
 - Every query a tool makes goes through `Warehouse.execute` (deadline + `MAX_CONCURRENT_QUERIES` slots); never call `wh.con` from a tool. Every tool result passes `within_budget` before it reaches the model.
-- One question at a time per chat: `store.acquire_turn` before the transcript is read, `save_conversation(token=…)` to write it. Do not reintroduce in-process state for this — it must hold across workers.
+- One question at a time per chat: `store.acquire_turn` before the transcript is read, `save_conversation(token=…)` to write it. Do not reintroduce in-process state for this — it must hold across workers. The same goes for the login lockout (`store.begin_login_attempt`, keyed by `main.client_ip`, which trusts `X-Forwarded-For` only for `TRUSTED_PROXY_HOPS` proxies).
 - Percentages in charts are percentage values (87.35), never fractions; the chart block carries `percent_scale`.
 - The warehouse rebuilds when the source manifest (names, sizes, modified times) changes, not only when a file is newer.
 - Keep the front end CDN-free (vendored marked / DOMPurify / Chart.js).

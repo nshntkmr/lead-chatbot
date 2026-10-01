@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 import logging
 import time
-from collections import defaultdict
 from contextlib import asynccontextmanager
 
 import jwt
@@ -79,7 +78,27 @@ def current_user(request: Request) -> dict:
     return user
 
 
-_failed: dict[str, list[float]] = defaultdict(list)
+def client_ip(request: Request) -> str:
+    """The address a request came from, for the login lockout.
+
+    Directly connected (TRUSTED_PROXY_HOPS=0) it is the socket peer, and X-Forwarded-For is ignored: a client
+    can put anything in that header, so trusting it would let an attacker pick a new address for every guess.
+    Behind N reverse proxies the peer is the proxy, which would put every user on one counter; each proxy
+    appends the address it received the request from, so the real client is the Nth entry from the right.
+    Entries further left were supplied by the client and are never used."""
+    peer = request.client.host if request.client else "?"
+    hops = config.TRUSTED_PROXY_HOPS
+    if hops <= 0:
+        return peer
+    chain = [p.strip() for p in request.headers.get("x-forwarded-for", "").split(",") if p.strip()]
+    if len(chain) < hops:
+        return peer   # the header is missing or shorter than the proxies we expect: not through our proxy
+    addr = chain[-hops]
+    if addr.startswith("["):                      # [2001:db8::1]:443
+        return addr[1:].split("]")[0]
+    if addr.count(":") == 1:                      # 203.0.113.7:51234 (Azure App Service adds the port)
+        return addr.split(":")[0]
+    return addr
 
 
 class LoginIn(BaseModel):
@@ -89,16 +108,15 @@ class LoginIn(BaseModel):
 
 @app.post("/api/login")
 def login(body: LoginIn, request: Request, response: Response):
-    ip = request.client.host if request.client else "?"
-    now = time.time()
-    _failed[ip] = [t for t in _failed[ip] if now - t < 900]
-    if len(_failed[ip]) >= 8:
-        raise HTTPException(429, "Too many attempts. Try again in 15 minutes.")
+    ip = client_ip(request)
+    # The attempt is counted in app.db before the password is checked, so the limit holds across worker
+    # processes and restarts, and parallel guesses cannot all slip in ahead of each other's failures.
+    if not store.begin_login_attempt(ip, config.LOGIN_MAX_FAILURES, config.LOGIN_LOCKOUT_SECONDS):
+        raise HTTPException(429, f"Too many attempts. Try again in {round(config.LOGIN_LOCKOUT_SECONDS / 60)} minutes.")
     user = store.verify_user(body.username.strip(), body.password)
     if not user:
-        _failed[ip].append(now)
         raise HTTPException(401, "Incorrect username or password")
-    _failed.pop(ip, None)
+    store.clear_login_attempts(ip)
     _issue(response, user["username"])
     return {"ok": True}
 

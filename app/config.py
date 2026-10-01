@@ -21,7 +21,7 @@ def _load_dotenv() -> None:
 _load_dotenv()
 
 APP_NAME = os.getenv("APP_NAME", "ACO Data Assistant")
-APP_VERSION = "2026.10.02-12"  # bump when app/ or data/context*.md change; printed at startup and shown in the usage panel
+APP_VERSION = "2026.10.02-13"  # bump when app/ or data/context*.md change; printed at startup and shown in the usage panel
 
 # --- Claude ---------------------------------------------------------------
 # Where Claude is called: "anthropic" (Claude API) or "foundry" (Claude in Microsoft Foundry / Azure).
@@ -113,6 +113,16 @@ if not SECRET_KEY:
         SECRET_KEY = secrets.token_urlsafe(48)
         key_file.write_text(SECRET_KEY)
 SESSION_HOURS = int(os.getenv("SESSION_HOURS", "12"))
+# Login lockout: this many sign-in attempts that did not succeed, per client address, within the window. Counted
+# in app.db, so it is shared by every worker process and survives restarts.
+LOGIN_MAX_FAILURES = int(os.getenv("LOGIN_MAX_FAILURES", "8"))
+LOGIN_LOCKOUT_SECONDS = float(os.getenv("LOGIN_LOCKOUT_SECONDS", "900"))
+# How many reverse proxies sit in front of the app (0 = clients connect directly). Behind a proxy the app sees
+# the proxy's address, which would put every user on one lockout counter; with N set, the client address is the
+# Nth entry from the right of X-Forwarded-For. Azure App Service / Container Apps ingress = 1; add one for each
+# further layer (Front Door, Application Gateway). Leave at 0 when nothing is in front: the header is then
+# ignored, because a client can forge it.
+TRUSTED_PROXY_HOPS = int(os.getenv("TRUSTED_PROXY_HOPS", "0"))
 # One question at a time per chat. The lock lives in app.db (so it also holds across worker processes), is
 # renewed after every model call of a turn, and expires this long after the last renewal if its holder died.
 TURN_LOCK_SECONDS = float(os.getenv("TURN_LOCK_SECONDS", "300"))

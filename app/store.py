@@ -49,6 +49,13 @@ CREATE TABLE IF NOT EXISTS usage (
 );
 CREATE INDEX IF NOT EXISTS idx_usage_user_ts ON usage(username, ts);
 CREATE INDEX IF NOT EXISTS idx_usage_conv ON usage(conversation_id);
+CREATE TABLE IF NOT EXISTS login_attempts (   -- sign-in attempts that have not (yet) succeeded, for the lockout
+    id  INTEGER PRIMARY KEY AUTOINCREMENT,
+    ip  TEXT NOT NULL,
+    ts  REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_login_ip_ts ON login_attempts(ip, ts);
+CREATE INDEX IF NOT EXISTS idx_login_ts ON login_attempts(ts);
 """
 
 
@@ -107,6 +114,29 @@ def verify_user(username: str, password: str) -> dict | None:
     if row and ok:
         return {"username": row["username"], "display_name": row["display_name"], "is_admin": bool(row["is_admin"])}
     return None
+
+
+def begin_login_attempt(ip: str, limit: int, window: float) -> bool:
+    """Count a sign-in attempt from an address; False when the address is locked out (`limit` attempts that did
+    not succeed within the last `window` seconds). The attempt is written before it is counted, in one
+    transaction, so SQLite's write lock orders concurrent attempts from any number of worker processes: no more
+    than `limit` can be let through, however many arrive at once. A refused attempt is not kept, so the lock
+    lasts `window` seconds from the failures that caused it rather than being extended by retries."""
+    now = time.time()
+    with db() as con:
+        con.execute("DELETE FROM login_attempts WHERE ts < ?", (now - window,))
+        row = con.execute("INSERT INTO login_attempts (ip, ts) VALUES (?, ?)", (ip, now)).lastrowid
+        recent = con.execute("SELECT count(*) FROM login_attempts WHERE ip = ? AND ts >= ?", (ip, now - window)).fetchone()[0]
+        if recent > limit:
+            con.execute("DELETE FROM login_attempts WHERE id = ?", (row,))
+            return False
+    return True
+
+
+def clear_login_attempts(ip: str) -> None:
+    """A successful sign-in wipes the address's count."""
+    with db() as con:
+        con.execute("DELETE FROM login_attempts WHERE ip = ?", (ip,))
 
 
 def get_user(username: str) -> dict | None:
