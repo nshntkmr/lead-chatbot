@@ -2,7 +2,7 @@
 
 This is the complete handover for the `lead-chatbot` repository: what the app is for, who uses it, how it is built, what every file does, what the data and the column dictionary contain, which decisions were made and why, and what is still open. Read this before changing anything; `CLAUDE.md` is the short version that loads automatically.
 
-Repo: https://github.com/nshntkmr/lead-chatbot · Deployed copy: `C:\Users\nisha\ACO-Lead-Document\aco-chat-app` (Windows, Python venv in `.venv`) · App version at handover: **2026.10.01-4**.
+Repo: https://github.com/nshntkmr/lead-chatbot · Deployed copy: `C:\Users\nisha\ACO-Lead-Document\aco-chat-app` (Windows, Python venv in `.venv`) · App version at handover: **2026.10.02-1**.
 
 ---
 
@@ -37,7 +37,7 @@ Working and verified:
 
 Open items:
 
-1. User to restart and confirm the startup log reads `Ready (app version 2026.10.01-4)` and that the 5-TIN LEAD answer reports High Needs ≈ 101.7% (loss-making). An earlier "fix" looked ineffective because the deployed copy was stale — hence the version stamp.
+1. User to restart and confirm the startup log reads `Ready (app version 2026.10.02-1)` and that the 5-TIN LEAD answer reports High Needs ≈ 101.7% (loss-making). An earlier "fix" looked ineffective because the deployed copy was stale — hence the version stamp.
 2. User to run `TESTING.md` against Opus 5.5 on Foundry and report misses.
 3. The device folder is not yet a git clone (see README "Working on this project with Claude Code"); a stray empty `.git` with an `index.lock` may exist there from a dry run and should be deleted before `git init`.
 
@@ -95,7 +95,7 @@ Browser (static/ vanilla JS)  ──SSE──►  FastAPI (app/main.py)
 
 | Setting | Default | Notes |
 |---|---|---|
-| `APP_VERSION` | `"2026.10.01-4"` | Constant in code. Bump on every answer-affecting change. Logged at startup, shown in the usage panel. |
+| `APP_VERSION` | `"2026.10.02-1"` | Constant in code. Bump on every answer-affecting change. Logged at startup, shown in the usage panel. |
 | `CLAUDE_PROVIDER` | auto | `anthropic` or `foundry`; auto = foundry when a Foundry resource/base URL is set and no Anthropic key. |
 | `ANTHROPIC_API_KEY`, `ANTHROPIC_FOUNDRY_API_KEY`, `ANTHROPIC_FOUNDRY_RESOURCE`, `ANTHROPIC_FOUNDRY_BASE_URL`, `FOUNDRY_USE_ENTRA_ID` | | Credentials/provider. |
 | `ANTHROPIC_MODEL` | `claude-sonnet-5-5` | On Foundry this is the **deployment name**. User runs `claude-opus-5-5`. |
@@ -259,7 +259,7 @@ usage(id, username, conversation_id, ts, model, provider, kind chat|summary,
 
 ## 10. Operations
 
-- **Start / restart (Windows):** `start.bat`, or `.venv\Scripts\uvicorn app.main:app --host 0.0.0.0 --port 8000`. Stop with Ctrl+C. Watch for `Ready (app version 2026.10.01-4): lead_… (11,865 rows), mssp_… (9,419 rows)`.
+- **Start / restart (Windows):** `start.bat`, or `.venv\Scripts\uvicorn app.main:app --host 0.0.0.0 --port 8000`. Stop with Ctrl+C. Watch for `Ready (app version 2026.10.02-1): lead_… (11,865 rows), mssp_… (9,419 rows)`.
 - **Users:** `.venv\Scripts\python -m scripts.manage_users add nishant --name "Nishant" --admin`.
 - **Data refresh:** drop new files in `data\`, restart (auto-rebuild when a source is newer; ~5–40 s), or `python -m scripts.rebuild_data`. After a LEAD extract change, re-run `python -m scripts.make_lead_notes` and re-verify the fingerprinted raw cells.
 - **Deployment verification:** the earlier stale-copy incident was caught by md5-comparing every file between the authoring copy and the device, and by the `APP_VERSION` stamp. Keep doing both after a deploy.
