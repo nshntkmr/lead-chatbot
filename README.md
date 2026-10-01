@@ -69,11 +69,13 @@ Passwords are stored as bcrypt hashes in `app.db`. Sessions are signed httpOnly 
 
 ## Updating the data
 
-Replace the files in `data\` and restart the app. It rebuilds `data\warehouse.duckdb` automatically whenever a source file is newer than it, which takes about 40 seconds for the current two files. To force a rebuild, run `python -m scripts.rebuild_data`.
+Replace the files in `data\` and restart the app. It rebuilds `data\warehouse.duckdb` automatically whenever the set of source files changes — a file added, removed, resized or replaced, including by a copy with an older date — which takes about 40 seconds for the current two files. To force a rebuild, run `python -m scripts.rebuild_data`. Stop every running copy of the app first: the warehouse cannot be replaced while another process has it open.
 
-The build streams each CSV through DuckDB on one thread with a memory cap (`BUILD_MEMORY_LIMIT`, default 4 GB), so file size is limited by disk, not RAM: a 100,000-row copy of the 2,605-column MSSP extract built in under 2 minutes with a 4 GB peak. The app assumes one row per TIN.
+The build streams each CSV through DuckDB on one thread with a memory cap (`BUILD_MEMORY_LIMIT`, default 4 GB), so file size is limited by disk, not RAM. Measured on 200,000-row copies of both extracts (201,705 × 1,235 and 207,218 × 2,605 columns): build 5 minutes, 4.3 GB peak, 2.2 GB warehouse, start-up under a second afterwards.
 
-After changing the data, the prompt or the domain notes, run `python -m evals.run` — it asks the questions in `TESTING.md` and checks the answers (about $1.50 and 2 minutes; `--offline` is free and checks the portfolio math only).
+The app assumes one row per TIN. Several files for one program are fine if they have the same header: they load as one table. If a program ends up with two tables of headline figures, or a TIN on more than one row, the portfolio tools switch themselves off for that program and say why, rather than compute on part of the data.
+
+After changing the data, the prompt or the domain notes, run `python -m evals.run` — it asks the questions in `TESTING.md` and grades the answers (about $1.60 and 4 minutes; `--offline` is free and checks the portfolio math, the guard rails and the plumbing without the model).
 
 ## Tuning Claude for your data
 

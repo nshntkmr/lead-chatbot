@@ -26,6 +26,8 @@ CREATE TABLE IF NOT EXISTS conversations (
     api_messages TEXT NOT NULL DEFAULT '[]',  -- exact message list sent to Claude
     ui_messages  TEXT NOT NULL DEFAULT '[]',  -- what the browser renders (text, charts, tables)
     state        TEXT NOT NULL DEFAULT '{}',  -- working set: portfolio TINs, target MLR, etc.
+    busy_token   TEXT,                        -- turn lock: set while a question is being answered
+    busy_until   REAL,                        -- ...and when that lock expires if its holder died
     created_at  REAL NOT NULL,
     updated_at  REAL NOT NULL
 );
@@ -68,6 +70,9 @@ def init() -> None:
         cols = {r["name"] for r in con.execute("PRAGMA table_info(conversations)")}
         if "state" not in cols:  # upgrade databases created before the working set existed
             con.execute("ALTER TABLE conversations ADD COLUMN state TEXT NOT NULL DEFAULT '{}'")
+        if "busy_token" not in cols:  # ...and before the turn lock
+            con.execute("ALTER TABLE conversations ADD COLUMN busy_token TEXT")
+            con.execute("ALTER TABLE conversations ADD COLUMN busy_until REAL")
 
 
 # ---- users ---------------------------------------------------------------
@@ -145,10 +150,39 @@ def get_conversation(username: str, cid: str) -> dict | None:
     return d
 
 
-def save_conversation(username: str, cid: str, api_messages: list, ui_messages: list, state: dict | None = None) -> None:
+def acquire_turn(username: str, cid: str, ttl: float) -> str | None:
+    """Take the conversation's turn lock: one question at a time per chat. Returns a token, or None while
+    another request holds the lock. It is a single UPDATE in the shared database, so it holds across worker
+    processes as well as within one; it expires after `ttl` seconds so a holder that died does not block the
+    chat for good. A turn reads the transcript only after taking the lock and saves it with the token."""
+    token, now = uuid.uuid4().hex, time.time()
     with db() as con:
-        con.execute("UPDATE conversations SET api_messages=?, ui_messages=?, state=?, updated_at=? WHERE id=? AND username=?",
-                    (json.dumps(api_messages), json.dumps(ui_messages), json.dumps(state or {}), time.time(), cid, username))
+        taken = con.execute(
+            "UPDATE conversations SET busy_token=?, busy_until=? WHERE id=? AND username=? "
+            "AND (busy_until IS NULL OR busy_until < ?)", (token, now + ttl, cid, username, now)).rowcount
+    return token if taken else None
+
+
+def extend_turn(username: str, cid: str, token: str, ttl: float) -> None:
+    """Keep the lock alive while a long answer is still making progress."""
+    with db() as con:
+        con.execute("UPDATE conversations SET busy_until=? WHERE id=? AND username=? AND busy_token=?",
+                    (time.time() + ttl, cid, username, token))
+
+
+def save_conversation(username: str, cid: str, api_messages: list, ui_messages: list, state: dict | None = None,
+                      token: str | None = None) -> bool:
+    """Store the transcript. With a turn token the write happens, and the lock is released, only if that
+    turn still holds the lock; a turn whose lock expired and was taken by another returns False and writes
+    nothing, so it cannot overwrite the newer transcript."""
+    values = (json.dumps(api_messages), json.dumps(ui_messages), json.dumps(state or {}), time.time(), cid, username)
+    with db() as con:
+        if token is None:
+            return con.execute("UPDATE conversations SET api_messages=?, ui_messages=?, state=?, updated_at=? "
+                               "WHERE id=? AND username=?", values).rowcount > 0
+        return con.execute("UPDATE conversations SET api_messages=?, ui_messages=?, state=?, updated_at=?, "
+                           "busy_token=NULL, busy_until=NULL WHERE id=? AND username=? AND busy_token=?",
+                           values + (token,)).rowcount > 0
 
 
 def rename_conversation(username: str, cid: str, title: str) -> None:

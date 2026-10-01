@@ -13,7 +13,7 @@ from anthropic import AsyncAnthropic
 
 from . import config
 from .data import Warehouse, fit_rows
-from .portfolio import PortfolioCalc, build_spec, clean_tins, compare_programs
+from .portfolio import PortfolioCalc, PortfolioUnavailable, build_spec, clean_tins, compare_programs
 
 log = logging.getLogger(__name__)
 
@@ -71,7 +71,8 @@ TOOLS = [
                 "point_label": {"type": "string", "description": "Scatter only: optional result column shown in the tooltip (e.g. Organization)"},
                 "x_label": {"type": "string"},
                 "y_label": {"type": "string"},
-                "value_format": {"type": "string", "enum": VALUE_FORMATS, "description": "How to format y values. 'percent' expects fractions (0.25 → 25%)."},
+                "value_format": {"type": "string", "enum": VALUE_FORMATS, "description": "How to format y values. 'percent' expects percentage values, as the SQL should "
+                                                                                    "return them with round(100 * x, 2): 87.35 → 87.35%. Never fractions."},
             },
             "required": ["title", "chart_type", "sql", "x", "y"],
         },
@@ -284,13 +285,7 @@ class Agent:
         self.wh = warehouse
         self.client = make_client()
         self.programs = warehouse.programs                     # id -> info
-        self.calcs: dict[str, PortfolioCalc] = {}
-        for pid in self.programs:
-            spec = build_spec(warehouse, pid)
-            if spec:
-                self.calcs[pid] = PortfolioCalc(warehouse, spec)
-            else:
-                log.warning("Portfolio tools disabled for %s: no recognised headline columns", pid)
+        self.calcs, self.calc_errors = make_calcs(warehouse)
         shared = _read_text(config.DATA_DIR / "context.md")
         self.system_texts: dict[str, str] = {}
         for pid, info in self.programs.items():
@@ -401,16 +396,22 @@ class Agent:
                  "datasets": datasets, "x_label": a.get("x_label") or x,
                  "y_label": a.get("y_label") or (ys[0] if len(ys) == 1 else ""),
                  "value_format": a.get("value_format", "number"), "sql": a.get("sql", ""),
-                 "truncated": res["truncated"]}
+                 "truncated": res["truncated"],
+                 # Charts saved before 2026.10.02-12 hold fractions under 'percent'; the browser tells them apart by this.
+                 "percent_scale": "percent"}
         back = {"chart_shown_to_user": True, "points": len(rows), "truncated": res["truncated"],
                 **_preview(cols, rows, 40, "rows")}
         return json.dumps(back, default=str), chart
 
     # ------------------------------------------------------------ portfolio
+    def _no_calc(self, program: str | None) -> str:
+        why = getattr(self, "calc_errors", {}).get(program or "", "its headline columns were not recognised")
+        return f"Portfolio figures are not available for the {program} dataset: {why} Tell the user; do not work them out with run_sql."
+
     def _portfolio_metrics(self, a: dict, state: dict, program: str | None) -> tuple[str, dict]:
         calc = self.calcs.get(program or "")
         if not calc:
-            return json.dumps({"error": f"Portfolio tools are not available for the {program} dataset (headline columns not recognised)."}), \
+            return json.dumps({"error": self._no_calc(program)}), \
                 {"type": "tool", "name": "portfolio_metrics", "label": "Portfolio", "ok": False}
         action = a.get("action") or "set"
         save = a.get("save", True)
@@ -470,7 +471,7 @@ class Agent:
     def _portfolio_suggest(self, a: dict, state: dict, program: str | None) -> tuple[str, dict]:
         calc = self.calcs.get(program or "")
         if not calc:
-            return json.dumps({"error": f"Portfolio tools are not available for the {program} dataset."}), \
+            return json.dumps({"error": self._no_calc(program)}), \
                 {"type": "tool", "name": "portfolio_suggest", "label": "Suggest TINs", "ok": False}
         tins = clean_tins(a.get("tins")) or list(state.get("portfolio") or [])
         target = float(a.get("target_mlr"))
@@ -572,6 +573,7 @@ class Agent:
                     text = json.dumps({"error": str(e)[:500]})
                     block = {"type": "tool", "name": b["name"], "label": b["name"], "ok": False, "detail": str(e)[:300]}
                 yield {"type": "block", "block": block}
+                text = within_budget(text)
                 results.append({"type": "tool_result", "tool_use_id": b["id"], "content": text,
                                 **({"is_error": True} if '"error"' in text[:20] else {})})
             history.append({"role": "user", "content": results})
@@ -610,6 +612,55 @@ class Agent:
         ]
         log.info("Compacted conversation: %d older messages summarized", len(old))
         return _usage_event(resp, config.SUMMARY_MODEL or config.ANTHROPIC_MODEL, "summary")
+
+
+def make_calcs(wh: Warehouse) -> tuple[dict[str, PortfolioCalc], dict[str, str]]:
+    """A portfolio calculator per program, and for programs without one the reason shown to the user."""
+    calcs: dict[str, PortfolioCalc] = {}
+    errors: dict[str, str] = {}
+    for pid in wh.programs:
+        try:
+            spec = build_spec(wh, pid)
+        except PortfolioUnavailable as e:
+            errors[pid] = str(e)
+            log.error("Portfolio tools disabled for %s: %s", pid, e)
+            continue
+        if spec:
+            calcs[pid] = PortfolioCalc(wh, spec)
+        else:
+            errors[pid] = "its headline columns were not recognised."
+            log.warning("Portfolio tools disabled for %s: no recognised headline columns", pid)
+    return calcs, errors
+
+
+def within_budget(text: str, budget: int | None = None) -> str:
+    """The last guard on what any tool sends to Claude. Each tool sizes its own lists; this bounds the whole
+    serialized result, so a field nobody thought to cap (a long warning, a new list) cannot overflow the
+    context. Long lists and strings are cut progressively, with a marker saying how much was left out."""
+    budget = budget or config.MAX_RESULT_CHARS_TO_CLAUDE
+    if len(text) <= budget:
+        return text
+    try:
+        obj = json.loads(text)
+    except ValueError:
+        return text[:budget] + " …[cut to the size limit]"
+    for items, chars in ((200, 4000), (100, 2000), (50, 1000), (25, 500), (10, 300), (5, 200)):
+        out = json.dumps(_shrink(obj, items, chars), default=str)
+        if len(out) <= budget:
+            return out
+    return json.dumps({"error": "The result was too large to return even after shortening. Ask for less at once: "
+                                "fewer TINs, fewer columns, or an aggregate."})
+
+
+def _shrink(x, items: int, chars: int):
+    if isinstance(x, dict):
+        return {k: _shrink(v, items, chars) for k, v in x.items()}
+    if isinstance(x, list):
+        out = [_shrink(v, items, chars) for v in x[:items]]
+        return out + [f"… {len(x) - items} more not shown"] if len(x) > items else out
+    if isinstance(x, str) and len(x) > chars:
+        return x[:chars] + f"… [{len(x) - chars} more characters not shown]"
+    return x
 
 
 def _usage_event(message, model: str, kind: str) -> dict:

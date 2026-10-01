@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import datetime as dt
 import decimal
+import hashlib
 import json
 import logging
 import math
@@ -66,21 +67,23 @@ _NULL_STRINGS = ["", "#N/A", "#N/A N/A", "#NA", "-1.#IND", "-1.#QNAN", "-NaN", "
                  "<NA>", "N/A", "NA", "NULL", "NaN", "None", "n/a", "nan", "null"]
 
 
-def _load_csv(con: duckdb.DuckDBPyConnection, path: Path, tname: str) -> None:
+def _load_csv(con: duckdb.DuckDBPyConnection, paths: list[Path], tname: str) -> None:
     """Load a data CSV with DuckDB's own reader. It streams the file, so memory stays within the build
     connection's memory_limit however many rows there are (pandas needs the whole table in RAM: ~8 GB for
-    200,000 rows of the 2,605-column extract). See config.BUILD_THREADS for why the build is single-threaded."""
+    200,000 rows of the 2,605-column extract). See config.BUILD_THREADS for why the build is single-threaded.
+    Several files with the same header are read as one table, with column types inferred across all of them."""
+    src = [str(p) for p in paths]
     lit = lambda s: "'" + s.replace("'", "''") + "'"
     opts = (f"header = true, delim = ',', quote = '\"', escape = '\"', strict_mode = false, "
             f"normalize_names = false, nullstr = [{', '.join(lit(s) for s in _NULL_STRINGS)}], "
             f"auto_type_candidates = ['BIGINT', 'DOUBLE', 'VARCHAR']")
-    names = [r[0] for r in con.execute(f"DESCRIBE SELECT * FROM read_csv(?, {opts})", [str(path)]).fetchall()]
+    names = [r[0] for r in con.execute(f"DESCRIBE SELECT * FROM read_csv(?, {opts})", [src]).fetchall()]
     text = [n for n in names if n.strip() in config.TEXT_COLUMNS]
     types = ", types = {" + ", ".join(lit(n) + ": 'VARCHAR'" for n in text) + "}" if text else ""
     select = ", ".join(f"{_qi(n)} AS {_qi(n.strip())}" for n in names)
     # sample_size = -1: infer each column's type from every row, as pandas did.
     con.execute(f"CREATE TABLE {_qi(tname)} AS SELECT {select} FROM read_csv(?, {opts}, sample_size = -1{types})",
-                [str(path)])
+                [src])
     # Two pandas conventions the rest of the app (and the domain notes) rely on: a column of True/False is
     # BOOLEAN — but Yes/No stays text, which DuckDB's own boolean detection would convert — and an entirely
     # blank column is numeric.
@@ -125,15 +128,63 @@ def _data_files() -> list[Path]:
     return [found[name] for name in sorted(found)]
 
 
+BUILD_FORMAT = "2"   # bump when the loader changes what it writes, so existing warehouses rebuild
+
+
+def _manifest(files: list[Path]) -> list[tuple[str, int, int, str]]:
+    """What the warehouse was built from: (name, size, modified time, content hash) per source file. The hash
+    is filled only with VERIFY_SOURCE_HASH=true (it reads every byte of every extract at each start)."""
+    out = [("__format__", 0, 0, BUILD_FORMAT)]
+    for f in files:
+        st = f.stat()
+        digest = ""
+        if config.VERIFY_SOURCE_HASH:
+            h = hashlib.sha256()
+            with f.open("rb") as fh:
+                for block in iter(lambda: fh.read(1 << 22), b""):
+                    h.update(block)
+            digest = h.hexdigest()
+        out.append((f.name, st.st_size, st.st_mtime_ns, digest))
+    return sorted(out)
+
+
+def _stored_manifest(wh: Path) -> list[tuple[str, int, int, str]] | None:
+    """The manifest recorded in an existing warehouse; None when it has none (built by an earlier version)."""
+    con = duckdb.connect(str(wh), read_only=True)
+    try:
+        if not con.execute("SELECT count(*) FROM information_schema.tables WHERE table_name = '_sources'").fetchone()[0]:
+            return None
+        return sorted(tuple(r) for r in con.execute("SELECT name, size, mtime_ns, sha256 FROM _sources").fetchall())
+    finally:
+        con.close()
+
+
+def _is_stale(files: list[Path], wh: Path) -> bool:
+    """True when the warehouse does not reflect exactly the source files now present: one was added, removed,
+    resized, or replaced (including by a copy with an older timestamp)."""
+    if not wh.exists():
+        return True
+    stored = _stored_manifest(wh)
+    if stored is None:   # no manifest yet: the earlier rule, so an upgrade alone does not force a rebuild
+        return wh.stat().st_mtime < max(f.stat().st_mtime for f in files)
+    return stored != _manifest(files)
+
+
+def _csv_header(path: Path) -> tuple[str, ...]:
+    with path.open(encoding="utf-8-sig", newline="") as f:
+        return tuple(c.strip() for c in next(csv.reader(f), []))
+
+
 def build_warehouse(force: bool = False) -> None:
-    """(Re)build the DuckDB file when any source file is newer than it."""
+    """(Re)build the DuckDB file when it does not match the source files (see _is_stale)."""
     files = _data_files()
     if not files:
         raise RuntimeError(f"No CSV/Excel files found in {config.SOURCE_DIR}")
     wh = config.WAREHOUSE_PATH
-    if not force and wh.exists() and wh.stat().st_mtime >= max(f.stat().st_mtime for f in files):
+    if not force and not _is_stale(files, wh):
         return
     log.info("Building data warehouse from %d file(s)…", len(files))
+    manifest = _manifest(files)
     tmp = wh.with_suffix(".building")
     tmp.unlink(missing_ok=True)
     con = duckdb.connect(str(tmp))
@@ -145,10 +196,11 @@ def build_warehouse(force: bool = False) -> None:
         con.execute("CREATE TABLE _tables (table_name VARCHAR, source_file VARCHAR, program VARCHAR)")
         con.execute("CREATE TABLE _column_stats (table_name VARCHAR, column_name VARCHAR, distinct_count BIGINT, "
                     "constant_json VARCHAR)")
+        con.execute("CREATE TABLE _sources (name VARCHAR, size BIGINT, mtime_ns BIGINT, sha256 VARCHAR)")
+        con.executemany("INSERT INTO _sources VALUES (?, ?, ?, ?)", [list(m) for m in manifest])
 
-        def registered(tname: str, f: Path) -> None:
-            program = detect_program(f.name)
-            con.execute("INSERT INTO _tables VALUES (?, ?, ?)", [tname, f.name, program])
+        def registered(tname: str, source: str, program: str) -> None:
+            con.execute("INSERT INTO _tables VALUES (?, ?, ?)", [tname, source, program])
             names = [r[0] for r in con.execute(
                 "SELECT column_name FROM information_schema.columns WHERE table_name = ? ORDER BY ordinal_position",
                 [tname]).fetchall()]
@@ -156,13 +208,21 @@ def build_warehouse(force: bool = False) -> None:
             con.executemany("INSERT INTO _column_stats VALUES (?, ?, ?, ?)",
                             [[tname, n, d, json.dumps(v)] for n, d, v in _column_stats(con, tname, names)])
             rows = con.execute(f"SELECT count(*) FROM {_qi(tname)}").fetchone()[0]
-            log.info("  table %s [%s]: %d rows x %d cols", tname, program, rows, len(names))
+            log.info("  table %s [%s] from %s: %d rows x %d cols", tname, program, source, rows, len(names))
+
+        # Data CSVs of one program with the same header are parts of one extract: they become one table, so
+        # every tool (the portfolio calculator included) sees all of their rows.
+        parts: dict[tuple[str, tuple[str, ...]], list[Path]] = {}
+        for f in files:
+            if f.suffix.lower() == ".csv" and not _is_dictionary(f):
+                parts.setdefault((detect_program(f.name), _csv_header(f)), []).append(f)
+        for (program, _), group in parts.items():
+            tname = _table_name(group[0].stem)
+            _load_csv(con, group, tname)
+            registered(tname, " + ".join(f.name for f in group), program)
 
         for f in files:
             if f.suffix.lower() == ".csv" and not _is_dictionary(f):
-                tname = _table_name(f.stem)
-                _load_csv(con, f, tname)
-                registered(tname, f)
                 continue
             for tname, df in _read_file(f).items():
                 if _is_dictionary(f):
@@ -177,10 +237,15 @@ def build_warehouse(force: bool = False) -> None:
                 con.register("df", df)
                 con.execute(f'CREATE TABLE "{tname}" AS SELECT * FROM df')
                 con.unregister("df")
-                registered(tname, f)
+                registered(tname, f.name, detect_program(f.name))
     finally:
         con.close()
-    wh.unlink(missing_ok=True)
+    try:
+        wh.unlink(missing_ok=True)
+    except PermissionError as e:
+        tmp.unlink(missing_ok=True)
+        raise RuntimeError(f"The source files changed, but {wh.name} cannot be replaced because another process has "
+                           f"it open. Stop the other app instance (or point WAREHOUSE_PATH elsewhere) and start again.") from e
     tmp.rename(wh)
 
 
@@ -198,6 +263,14 @@ def _column_stats(con: duckdb.DuckDBPyConnection, tname: str, names: list[str]) 
 # --------------------------------------------------------------------------
 # Read-only access
 # --------------------------------------------------------------------------
+class QueryTimeout(RuntimeError):
+    """A query ran past its deadline and was stopped."""
+
+
+class QueryBusy(RuntimeError):
+    """No query slot became free within the deadline."""
+
+
 @dataclass
 class Column:
     table: str
@@ -218,6 +291,33 @@ class Warehouse:
     columns: list[Column] = field(default_factory=list)
     dictionary: Dictionary | None = None
     programs: dict[str, dict] = field(default_factory=dict)  # id -> {label, description, tables, rows, columns}
+    _slots: threading.BoundedSemaphore = field(
+        default_factory=lambda: threading.BoundedSemaphore(max(1, config.MAX_CONCURRENT_QUERIES)), repr=False)
+
+    def execute(self, sql: str, params: list | None = None, max_rows: int | None = None,
+                timeout: float | None = None) -> tuple[list[str], list[tuple]]:
+        """Run one statement for a request. Every query a tool makes goes through here — Claude's SQL, the
+        portfolio calculator, column profiling — so all of them get the same deadline and share the same
+        bounded number of slots. Returns (column names, rows); raises QueryTimeout / QueryBusy."""
+        timeout = config.QUERY_TIMEOUT_SECONDS if timeout is None else timeout
+        if not self._slots.acquire(timeout=timeout):
+            raise QueryBusy(f"The data engine is busy ({config.MAX_CONCURRENT_QUERIES} queries already running). "
+                            f"Try again in a moment.")
+        try:
+            cur = self.con.cursor()
+            timer = threading.Timer(timeout, cur.interrupt)
+            timer.start()
+            try:
+                cur.execute(sql, params or [])
+                cols = [d[0] for d in cur.description]
+                rows = cur.fetchall() if max_rows is None else cur.fetchmany(max_rows)
+            except duckdb.InterruptException:
+                raise QueryTimeout(f"Query exceeded {timeout:.0f}s and was stopped.") from None
+            finally:
+                timer.cancel()
+            return cols, rows
+        finally:
+            self._slots.release()
 
     @classmethod
     def open(cls) -> "Warehouse":
@@ -367,13 +467,12 @@ class Warehouse:
         q = f'"{c.name}"'
         t = f'"{c.table}"'
         try:
-            cur = self.con.cursor()
             if _short_type(c.dtype) in ("number", "integer"):
-                r = cur.execute(f"SELECT count({q}), min({q}), max({q}), avg({q}) FROM {t}").fetchone()
+                r = self.execute(f"SELECT count({q}), min({q}), max({q}), avg({q}) FROM {t}")[1][0]
                 return {"non_null": r[0], "min": _clean(r[1]), "max": _clean(r[2]), "mean": _clean(r[3])}
-            r = cur.execute(f"SELECT count({q}), count(DISTINCT {q}) FROM {t}").fetchone()
-            top = cur.execute(f"SELECT {q}, count(*) n FROM {t} WHERE {q} IS NOT NULL "
-                              f"GROUP BY 1 ORDER BY n DESC LIMIT 5").fetchall()
+            r = self.execute(f"SELECT count({q}), count(DISTINCT {q}) FROM {t}")[1][0]
+            top = self.execute(f"SELECT {q}, count(*) n FROM {t} WHERE {q} IS NOT NULL "
+                               f"GROUP BY 1 ORDER BY n DESC LIMIT 5")[1]
             return {"non_null": r[0], "distinct": r[1],
                     "top_values": [f"{_clean(v)} ({n})" for v, n in top]}
         except Exception as e:  # pragma: no cover - profiling is best-effort
@@ -400,18 +499,12 @@ class Warehouse:
                 return {"error": f"This chat is scoped to the {program} dataset. Table(s) {', '.join(other)} belong to "
                                  f"another dataset: the user can start a new chat for it, and compare_programs gives "
                                  f"a side-by-side view of the same TINs when it is available."}
-        timer = threading.Timer(config.QUERY_TIMEOUT_SECONDS, cur.interrupt)
-        timer.start()
         try:
-            cur.execute(sql)
-            cols = [d[0] for d in cur.description]
-            rows = cur.fetchmany(max_rows + 1)
-        except duckdb.InterruptException:
-            return {"error": f"Query exceeded {config.QUERY_TIMEOUT_SECONDS:.0f}s and was stopped. Simplify it."}
+            cols, rows = self.execute(sql, max_rows=max_rows + 1)
+        except QueryTimeout as e:
+            return {"error": f"{e} Simplify it."}
         except Exception as e:
             return {"error": str(e)[:1500]}
-        finally:
-            timer.cancel()
         truncated = len(rows) > max_rows
         rows = [[_cell(v) for v in r] for r in rows[:max_rows]]
         out = {"columns": cols, "rows": rows, "row_count": len(rows), "truncated": truncated}

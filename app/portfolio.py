@@ -135,6 +135,11 @@ class MsspSpec(ProgramSpec):
                 f"Hard cap: ENHANCED shared losses cannot exceed {self.params['loss_cap']:.0%} of the benchmark.")
 
 
+def _some(tins: list[str], n: int = 10) -> str:
+    """A TIN list for a warning: the first n and a count of the rest."""
+    return ", ".join(tins[:n]) + (f" and {len(tins) - n} more ({len(tins)} TINs)" if len(tins) > n else "")
+
+
 def _q(name: str) -> str:
     return '"' + name.replace('"', '""') + '"'
 
@@ -144,12 +149,34 @@ def _n(name: str) -> str:
     return f"TRY_CAST({_q(name)} AS DOUBLE)"
 
 
+class PortfolioUnavailable(RuntimeError):
+    """The program's data cannot support portfolio math; the message says why and is shown to the user."""
+
+
 def build_spec(wh: Warehouse, program: str) -> ProgramSpec | None:
-    """Pick the spec that matches the program's table by looking at its columns."""
-    tables = wh.tables_for(program)
-    if not tables:
+    """The spec for the program's headline table. None when no table has the headline columns. Raises
+    PortfolioUnavailable when the layout would make the totals wrong: more than one table with headline
+    columns (the calculator reads exactly one, so the others' TINs would be silently left out) or a TIN on
+    more than one row (every sum assumes one row per TIN)."""
+    found = [s for s in (_spec_for(wh, program, t) for t in wh.tables_for(program)) if s]
+    if not found:
         return None
-    table = tables[0]
+    if len(found) > 1:
+        raise PortfolioUnavailable(
+            f"{len(found)} {program} tables hold headline figures ({', '.join(s.table for s in found)}). Portfolio "
+            f"math reads one table per program: give the extract files the same header so they load as one table, "
+            f"or remove the extra file.")
+    spec = found[0]
+    rows, tins = wh.execute(f'SELECT count(*), count(DISTINCT {spec.tin}) FROM "{spec.table}"')[1][0]
+    if rows != tins:
+        raise PortfolioUnavailable(
+            f"{rows - tins:,} of the {rows:,} {program} rows repeat a TIN (or have none). Portfolio math needs one "
+            f"row per TIN; fix the extract and rebuild.")
+    return spec
+
+
+def _spec_for(wh: Warehouse, program: str, table: str) -> ProgramSpec | None:
+    """The spec that matches one table, judged by its columns."""
     have = {c.name for c in wh.columns if c.table == table}
 
     # ---- LEAD extract -------------------------------------------------------
@@ -269,8 +296,7 @@ class PortfolioCalc:
         s = self.spec
         sql = (f"SELECT {s.tin}, {s.npi}, {s.org}, {s.cls}, {s.py}, {s.benes}, {s.bm_usd}, {s.exp_usd} "
                f'FROM "{s.table}" WHERE {where}')
-        rows = self.wh.con.cursor().execute(sql, params).fetchall()
-        return [_row(r) for r in rows]
+        return [_row(r) for r in self.wh.execute(sql, params)[1]]
 
     @staticmethod
     def _usable(rows: list[Row]) -> tuple[list[Row], list[str], list[str]]:
@@ -291,9 +317,9 @@ class PortfolioCalc:
     def _sum(self, expr: str, tins: list[str]) -> float:
         if not tins:
             return 0.0
-        v = self.wh.con.cursor().execute(
+        v = self.wh.execute(
             f'SELECT sum({expr}) FROM "{self.spec.table}" WHERE {self.spec.tin} IN ({", ".join("?" * len(tins))})',
-            tins).fetchone()[0]
+            tins)[1][0][0]
         return float(v or 0)
 
     # --------------------------------------------------------------- metrics
@@ -324,7 +350,7 @@ class PortfolioCalc:
         dup = {n: t for n, t in npis.items() if len(t) > 1}
         if dup:
             warnings.append("TINs sharing one NPI (their source population overlaps, so the combined figures "
-                            "double-count it): " + "; ".join(f"NPI {n}: {', '.join(t)}" for n, t in list(dup.items())[:20])
+                            "double-count it): " + "; ".join(f"NPI {n}: {_some(t)}" for n, t in list(dup.items())[:20])
                             + (f"; and {len(dup) - 20} more NPIs" if len(dup) > 20 else ""))
         if isinstance(self.spec, LeadSpec) and len({r.cls for r in valid}) > 1:
             warnings.append("Mix of High- and Low-Spending TINs. " + self.spec.params["note"] +
@@ -410,9 +436,9 @@ class PortfolioCalc:
     def _distinct(self, expr: str, tins: list[str]) -> list:
         if not tins:
             return []
-        rows = self.wh.con.cursor().execute(
+        rows = self.wh.execute(
             f'SELECT DISTINCT {expr} FROM "{self.spec.table}" WHERE {self.spec.tin} IN ({", ".join("?" * len(tins))}) ORDER BY 1',
-            tins).fetchall()
+            tins)[1]
         return [r[0] for r in rows if r[0] is not None]
 
     def _cohorts(self, tins: list[str], target_mlr: float | None = None,
@@ -420,9 +446,9 @@ class PortfolioCalc:
         if not tins or not self.spec.cohorts:
             return []
         parts = [f"sum({py}), sum({bm}), sum({ex})" for _, py, bm, ex in self.spec.cohorts]
-        r = self.wh.con.cursor().execute(
+        r = self.wh.execute(
             f'SELECT {", ".join(parts)} FROM "{self.spec.table}" WHERE {self.spec.tin} IN ({", ".join("?" * len(tins))})',
-            tins).fetchone()
+            tins)[1][0]
         out = []
         for i, (name, *_rest) in enumerate(self.spec.cohorts):
             py, bm, ex = (float(x or 0) for x in r[3 * i: 3 * i + 3])
@@ -507,7 +533,7 @@ class PortfolioCalc:
         cols = "tin, npi, org, cls, py, benes, bm, ex"
 
         def run(tail: str, extra: list | None = None) -> list:
-            return self.wh.con.cursor().execute(cte + tail, base + (extra or [])).fetchall()
+            return self.wh.execute(cte + tail, base + (extra or []))[1]
 
         def fmt(r: Row, extra: dict | None = None):
             d = {"tin": r.tin, "organization": r.org, self._cls_key(): r.cls, "person_years": round(r.py, 1),

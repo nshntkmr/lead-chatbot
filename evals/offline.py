@@ -7,7 +7,7 @@ import json
 import duckdb
 
 from app import config
-from app.agent import Agent
+from app.agent import Agent, make_calcs
 from app.data import Warehouse
 from app.portfolio import LeadSpec, PortfolioCalc, build_spec
 
@@ -19,7 +19,7 @@ def bare_agent(wh: Warehouse) -> Agent:
     """An Agent with its tools but no API client."""
     agent = Agent.__new__(Agent)
     agent.wh, agent.programs, agent.default_program = wh, wh.programs, None
-    agent.calcs = {pid: PortfolioCalc(wh, spec) for pid in wh.programs if (spec := build_spec(wh, pid))}
+    agent.calcs, agent.calc_errors = make_calcs(wh)
     return agent
 
 
@@ -110,6 +110,13 @@ def run(wh: Warehouse) -> list[tuple[str, bool, str]]:
         text, block = agent._run_tool("show_table", {"sql": f'SELECT * FROM "{table}"', "title": "x"}, {"program": pid})
         check(f"{pid} SELECT * table to the browser is within the size cap",
               len(json.dumps(block)) <= config.MAX_RESULT_CHARS_TO_UI + 200_000 and len(text) <= config.MAX_RESULT_CHARS_TO_CLAUDE + 5000, True)
+    if lead:
+        _, block = agent._run_tool("create_chart", {
+            "title": "Median MLR by class", "chart_type": "bar", "x": "c", "y": ["Median MLR %"], "value_format": "percent",
+            "sql": f'SELECT "ACO spending classification" AS c, round(100 * median("Pre-sharing MLR = expense / benchmark"), 2) '
+                   f'AS "Median MLR %" FROM "{lead.spec.table}" WHERE "Total benchmark" > 0 GROUP BY 1 ORDER BY 1'}, {"program": "LEAD"})
+        check("chart block: percent charts carry percentage values and say so",
+              (block.get("percent_scale"), block["datasets"][0]["data"]), ("percent", [97.97, 94.41]))
     text = json.dumps(wh.query("SELECT repeat('x', 1000000) AS payload", 200, max_chars=config.MAX_RESULT_CHARS_TO_CLAUDE))
     check("one huge cell is cut", len(text) < 10_000, True)
 

@@ -21,7 +21,7 @@ def _load_dotenv() -> None:
 _load_dotenv()
 
 APP_NAME = os.getenv("APP_NAME", "ACO Data Assistant")
-APP_VERSION = "2026.10.02-11"  # bump when app/ or data/context*.md change; printed at startup and shown in the usage panel
+APP_VERSION = "2026.10.02-12"  # bump when app/ or data/context*.md change; printed at startup and shown in the usage panel
 
 # --- Claude ---------------------------------------------------------------
 # Where Claude is called: "anthropic" (Claude API) or "foundry" (Claude in Microsoft Foundry / Azure).
@@ -77,6 +77,12 @@ PROGRAM_INFO = {
     "DATA": {"label": "Data", "description": "Other data files."},
 }
 QUERY_TIMEOUT_SECONDS = float(os.getenv("QUERY_TIMEOUT_SECONDS", "30"))
+# Queries running at once across all chats (Claude's SQL, portfolio math, column profiling). Each DuckDB query
+# already uses every core, so more slots add contention, not speed; further requests wait for a slot.
+MAX_CONCURRENT_QUERIES = int(os.getenv("MAX_CONCURRENT_QUERIES", "4"))
+# The warehouse is rebuilt when the source files' names, sizes or modified times change. true = also compare
+# SHA-256 content hashes (reads every extract at each start: roughly 10 s per GB).
+VERIFY_SOURCE_HASH = os.getenv("VERIFY_SOURCE_HASH", "false").lower() == "true"
 # Warehouse build. These extracts are thousands of columns wide, and DuckDB buffers a block of rows per thread
 # while loading, so a multi-threaded load of a large file runs out of memory (seen at 100,000 rows x 2,605
 # columns on a 24 GB machine). One thread keeps memory within BUILD_MEMORY_LIMIT at any row count (~90 s per
@@ -107,4 +113,7 @@ if not SECRET_KEY:
         SECRET_KEY = secrets.token_urlsafe(48)
         key_file.write_text(SECRET_KEY)
 SESSION_HOURS = int(os.getenv("SESSION_HOURS", "12"))
+# One question at a time per chat. The lock lives in app.db (so it also holds across worker processes), is
+# renewed after every model call of a turn, and expires this long after the last renewal if its holder died.
+TURN_LOCK_SECONDS = float(os.getenv("TURN_LOCK_SECONDS", "300"))
 COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() == "true"

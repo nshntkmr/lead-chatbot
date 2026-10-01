@@ -40,6 +40,9 @@
     if (v === null || v === undefined || v === '') return '—';
     if (typeof v !== 'number') return String(v);
     const abs = Math.abs(v);
+    // 'percent_value': the number is already a percentage (87.35 → 87.35%). 'percent' is the legacy scale of
+    // charts saved before 2026.10.02-12, which hold fractions (0.8735 → 87.4%).
+    if (format === 'percent_value') return v.toLocaleString(undefined, { maximumFractionDigits: 2 }) + '%';
     if (format === 'percent') return (v * 100).toLocaleString(undefined, { maximumFractionDigits: 1 }) + '%';
     if (format === 'currency') {
       return v.toLocaleString(undefined, {
@@ -239,7 +242,7 @@
     const isPie = type === 'pie' || type === 'doughnut';
     const horizontal = type === 'horizontal_bar';
     const stacked = type === 'stacked_bar';
-    const f = b.value_format || 'number';
+    const f = b.value_format === 'percent' && b.percent_scale === 'percent' ? 'percent_value' : (b.value_format || 'number');
     const multi = b.datasets.length > 1;
 
     const datasets = b.datasets.map((d, i) => {

@@ -2,7 +2,7 @@
 
 Every expected value below was computed directly from the two CSV files (LEAD 11,865 TINs, MSSP 9,419 TINs), not by the chatbot. If an answer differs by more than rounding, copy the question and the app's answer and we'll trace it.
 
-**Automated version:** Parts A and B (and C2–C4) are encoded in `evals/cases.py`. `python -m evals.run` asks every question and checks the figures below; `python -m evals.run --offline` checks the portfolio math and guard rails without calling the model. Use this sheet by hand for the UI checks in Part C.
+**Automated version:** Parts A and B (and C2–C4) are encoded in `evals/cases.py`. `python -m evals.run` asks every question and checks the figures below; `python -m evals.run --offline` checks the portfolio math and guard rails without calling the model. Use this sheet by hand for the UI checks in Part C. Differences between this sheet and the automated cases: the automated B9 does not require the answer to name the ENHANCED track, and A4 / B4 do not require the financial guarantee or (B4) the cohort MLRs in the reply, because those questions do not ask for them — the values themselves are checked without the model; B12's LEAD "shared $110.7M" is checked as the gross margin, which is shared in full before sequestration ($108.5M after), because B5 uses the after-sequestration basis; and A15 below exists mainly to check how a percentage chart is drawn.
 
 **Before you start**
 
@@ -32,6 +32,7 @@ Conventions: MLR = expense ÷ benchmark. "Margin" = benchmark − expense (savin
 | A12 | What is "Benchmark discount" — a dollar amount? | Must say it's the **rate** (0.03 / 0.0175), and that `Benchmark PBPM after discount` = before × (1 − rate). |
 | A13 | Show every TIN whose name contains "Regents of the University of California" with benchmark, MLR and shared savings. | A table of **10** TINs. Largest 954373071 ($1.27B, 87.4%, $160.9M shared); also 680344702 ($446.8M, 99.3%, High Spending). |
 | A14 | Build me a recruiting list: the 20 largest Low-Spending TINs by benchmark with MLR under 90%, excluding my portfolio. | First three: UC Regents 954373071 **$1,271.3M** / 87.35%; Allina **$788.3M** / 89.12%; DuPage **$756.1M** / 86.40%. 20th: Alegent Creighton Clinic **$315.4M** / 88.49%. UNC Physicians (in the portfolio if A6 was kept) must be excluded. |
+| A15 | Chart the median MLR of High Spending versus Low Spending TINs as a bar chart. | High Spending **97.97%**, Low Spending **94.41%** (medians among the 11,846 TINs with a benchmark). The axis and tooltips must read as percentages near 94–98%, not 9,400% or 0.94%. |
 
 ## Part B — MSSP dataset (new chat, pick MSSP)
 

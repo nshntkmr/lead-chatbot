@@ -196,9 +196,6 @@ class ChatIn(BaseModel):
     program: str | None = None   # required on the first message when more than one dataset is loaded
 
 
-_busy: set[str] = set()
-
-
 @app.post("/api/chat")
 async def chat(body: ChatIn, user: dict = Depends(current_user)):
     uname = user["username"]
@@ -215,8 +212,12 @@ async def chat(body: ChatIn, user: dict = Depends(current_user)):
         cid = store.create_conversation(uname, title, {"program": program})
         conv = store.get_conversation(uname, cid)
     cid = conv["id"]
-    if cid in _busy:
+    # Take the turn lock before reading the transcript this turn will extend, and before returning: two requests
+    # for one chat cannot both get past this point, in this process or another worker.
+    token = store.acquire_turn(uname, cid, config.TURN_LOCK_SECONDS)
+    if not token:
         raise HTTPException(409, "This chat is still answering the previous question.")
+    conv = store.get_conversation(uname, cid)
 
     api_msgs = repair_history(conv["api_messages"])
     ui_msgs = conv["ui_messages"]
@@ -230,7 +231,6 @@ async def chat(body: ChatIn, user: dict = Depends(current_user)):
         return f"data: {json.dumps(obj, default=str)}\n\n"
 
     async def stream():
-        _busy.add(cid)
         blocks = assistant["blocks"]
         turn = {"calls": 0, "tokens": 0, "cost_usd": 0.0, "unpriced": False}
         try:
@@ -250,6 +250,7 @@ async def chat(body: ChatIn, user: dict = Depends(current_user)):
                     turn["tokens"] += ev["input"] + ev["output"] + ev["cache_write"] + ev["cache_read"]
                     turn["cost_usd"] += cost
                     turn["unpriced"] = turn["unpriced"] or not known
+                    store.extend_turn(uname, cid, token, config.TURN_LOCK_SECONDS)   # still working: keep the lock
                     continue
                 yield sse(ev)
             if turn["calls"]:
@@ -264,9 +265,10 @@ async def chat(body: ChatIn, user: dict = Depends(current_user)):
             blocks.append({"type": "error", "text": msg})
             yield sse({"type": "error", "message": msg})
         finally:
-            _busy.discard(cid)
-            store.save_conversation(uname, cid, repair_history(api_msgs) if blocks and blocks[-1]["type"] == "error"
-                                    else api_msgs, ui_msgs, state)
+            saved = store.save_conversation(uname, cid, repair_history(api_msgs) if blocks and blocks[-1]["type"] == "error"
+                                            else api_msgs, ui_msgs, state, token=token)
+            if not saved:
+                log.warning("Turn for conversation %s outlived its lock and was not saved over the newer transcript", cid)
         yield sse({"type": "done"})
 
     return StreamingResponse(stream(), media_type="text/event-stream",
