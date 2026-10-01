@@ -2,6 +2,8 @@
 
 Every expected value below was computed directly from the two CSV files (LEAD 11,865 TINs, MSSP 9,419 TINs), not by the chatbot. If an answer differs by more than rounding, copy the question and the app's answer and we'll trace it.
 
+**Automated version:** Parts A and B (and C2–C4) are encoded in `evals/cases.py`. `python -m evals.run` asks every question and checks the figures below; `python -m evals.run --offline` checks the portfolio math and guard rails without calling the model. Use this sheet by hand for the UI checks in Part C.
+
 **Before you start**
 
 1. `.env` has `ANTHROPIC_API_KEY`; run `start.bat`; sign in at http://localhost:8000.

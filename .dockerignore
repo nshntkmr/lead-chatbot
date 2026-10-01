@@ -1,6 +1,17 @@
 .env
 .secret_key
 app.db
-data/warehouse.duckdb
 __pycache__
 .venv
+.git
+evals/results
+# Source extracts and the warehouse built from them never enter the build context.
+data/warehouse.duckdb
+data/*.building
+data/*.csv
+data/*.xlsx
+data/*.xlsm
+data/*.xls
+# ...except the small files the app's answers depend on.
+!data/column_notes*.csv
+!data/*Dictionary*.csv

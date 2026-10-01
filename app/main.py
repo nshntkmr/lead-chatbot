@@ -40,8 +40,17 @@ async def lifespan(app: FastAPI):
     yield
 
 
+class RevalidatedStatic(StaticFiles):
+    """Static files that the browser re-checks on every load (ETag → 304), so a deploy is never masked by a cached app.js."""
+
+    def file_response(self, *args, **kwargs):
+        resp = super().file_response(*args, **kwargs)
+        resp.headers["Cache-Control"] = "no-cache"
+        return resp
+
+
 app = FastAPI(title=config.APP_NAME, lifespan=lifespan, docs_url=None, redoc_url=None)
-app.mount("/static", StaticFiles(directory=STATIC), name="static")
+app.mount("/static", RevalidatedStatic(directory=STATIC), name="static")
 
 
 # ---------------------------------------------------------------- auth ----

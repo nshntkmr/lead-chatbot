@@ -52,7 +52,7 @@
     if (format === 'ratio') return v.toLocaleString(undefined, { maximumFractionDigits: 4 });
     return v.toLocaleString(undefined, {
       notation: compact && abs >= 1e4 ? 'compact' : 'standard',
-      maximumFractionDigits: abs >= 1e5 ? 0 : abs >= 100 ? 1 : abs >= 1 ? 2 : 4,
+      maximumFractionDigits: abs >= 1e5 ? 0 : abs >= 1000 ? 1 : abs >= 1 ? 2 : 4,   // keeps 100.65 (an MLR %) at two decimals
     });
   }
   const trunc = (s, n) => { s = String(s ?? ''); return s.length > n ? s.slice(0, n - 1) + '…' : s; };

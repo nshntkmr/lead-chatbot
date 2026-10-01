@@ -16,8 +16,9 @@ workbook's own identities, verified against the data:
                        ENHANCED caps (20 % savings / 15 % losses of benchmark)
 
 Combined MLR is Σ expense $ ÷ Σ benchmark $, never an average of per-TIN MLRs.
-Headroom against a target: h = target × benchmark $ − expense $; a set meets the target
-exactly when Σh ≥ 0, which is what makes "which TINs fix / fit my MLR" a simple sort.
+Room under a target: h = target × benchmark $ − expense $; a set meets the target exactly
+when Σh ≥ 0, which is what makes "which TINs fix / fit my MLR" a simple sort. (Output fields
+use the wording the users read — room_under_target_usd — so answers need no translation.)
 """
 from __future__ import annotations
 
@@ -77,7 +78,9 @@ class ProgramSpec:
     exp_usd: str
     cohorts: list[tuple[str, str, str, str]]       # (name, person-years expr, benchmark $ expr, expense $ expr)
     extra_sums: dict[str, str] = field(default_factory=dict)   # label -> SQL expression summed over the TINs
+    extra_distinct: dict[str, str] = field(default_factory=dict)   # label -> SQL expression; distinct values over the TINs
     params: dict = field(default_factory=dict)
+    net_key: str = ""        # key in share() holding the net shared result
 
     def share(self, margin: float, bm: float) -> dict:          # overridden per program
         raise NotImplementedError
@@ -174,6 +177,8 @@ def build_spec(wh: Warehouse, program: str) -> ProgramSpec | None:
                 "financial_guarantee_usd": _q("Financial guarantee amount"),
                 "quality_withhold_at_risk_usd": f'{_q("Quality withhold PBPM")} * {py} * 12',
             },
+            extra_distinct={"benchmark_discount_rates_applied": _q("Benchmark discount")} if "Benchmark discount" in have else {},
+            net_key="net_shared_savings_usd",
             params={"note": "Each TIN's benchmark carries its own High/Low-Spending classification (discount 1.75% vs "
                             "3%, regional adjustment). A real ACO gets one classification for the whole population."},
         )
@@ -219,7 +224,7 @@ def build_spec(wh: Warehouse, program: str) -> ProgramSpec | None:
             if "MSSP Shared Saving Losses — Savings or Losses Realized [PY2027] (B30)" in have else "''",
             cls_header="Workbook result", py=_q("Projected person years"), benes=_q("Projected beneficiaries"),
             bm_usd=_q("Projected benchmark"), exp_usd=_q("Projected expenditures"),
-            cohorts=cohorts, extra_sums=extras, params=params,
+            cohorts=cohorts, extra_sums=extras, params=params, net_key="shared_savings_or_losses_usd",
         )
     return None
 
@@ -236,7 +241,7 @@ class Row:
     py: float
     benes: float
     bm_usd: float
-    exp_usd: float
+    exp_usd: float | None    # None = blank in the workbook (not zero cost); such rows are excluded, never summed
 
     @property
     def margin(self) -> float:
@@ -265,8 +270,14 @@ class PortfolioCalc:
         sql = (f"SELECT {s.tin}, {s.npi}, {s.org}, {s.cls}, {s.py}, {s.benes}, {s.bm_usd}, {s.exp_usd} "
                f'FROM "{s.table}" WHERE {where}')
         rows = self.wh.con.cursor().execute(sql, params).fetchall()
-        return [Row(str(r[0]), str(r[1]), r[2] or "", str(r[3] or ""), float(r[4] or 0), float(r[5] or 0),
-                    float(r[6] or 0), float(r[7] or 0)) for r in rows]
+        return [_row(r) for r in rows]
+
+    @staticmethod
+    def _usable(rows: list[Row]) -> tuple[list[Row], list[str], list[str]]:
+        """(rows with a benchmark and an expense, TINs with a zero benchmark, TINs with a benchmark but no expense)."""
+        return ([r for r in rows if r.bm_usd > 0 and r.exp_usd is not None],
+                [r.tin for r in rows if r.bm_usd <= 0],
+                [r.tin for r in rows if r.bm_usd > 0 and r.exp_usd is None])
 
     def fetch(self, tins: list[str]) -> tuple[list[Row], list[str]]:
         if not tins:
@@ -289,8 +300,7 @@ class PortfolioCalc:
     def metrics(self, tins: list[str], target_mlr: float | None = None,
                 expense_change_pct: float = 0.0, benchmark_change_pct: float = 0.0) -> dict:
         rows, unknown = self.fetch(tins)
-        valid = [r for r in rows if r.bm_usd > 0]
-        zero = [r.tin for r in rows if r.bm_usd <= 0]
+        valid, zero, no_expense = self._usable(rows)
         if expense_change_pct or benchmark_change_pct:   # stress test: scale every TIN, keep the identities
             for r in valid:
                 r.exp_usd *= 1 + expense_change_pct / 100
@@ -305,13 +315,17 @@ class PortfolioCalc:
             warnings.append(f"{len(unknown)} TIN(s) not in the {self.program} data: {', '.join(unknown[:20])}")
         if zero:
             warnings.append(f"{len(zero)} TIN(s) have a zero benchmark in the workbook and were excluded: {', '.join(zero[:20])}")
+        if no_expense:
+            warnings.append(f"{len(no_expense)} TIN(s) have a benchmark but no projected expense in the workbook and were "
+                            f"excluded (a blank is not zero cost): {', '.join(no_expense[:20])}")
         npis: dict[str, list[str]] = {}
         for r in valid:
             npis.setdefault(r.npi, []).append(r.tin)
         dup = {n: t for n, t in npis.items() if len(t) > 1}
         if dup:
             warnings.append("TINs sharing one NPI (their source population overlaps, so the combined figures "
-                            "double-count it): " + "; ".join(f"NPI {n}: {', '.join(t)}" for n, t in dup.items()))
+                            "double-count it): " + "; ".join(f"NPI {n}: {', '.join(t)}" for n, t in list(dup.items())[:20])
+                            + (f"; and {len(dup) - 20} more NPIs" if len(dup) > 20 else ""))
         if isinstance(self.spec, LeadSpec) and len({r.cls for r in valid}) > 1:
             warnings.append("Mix of High- and Low-Spending TINs. " + self.spec.params["note"] +
                             " The combined figure is therefore an approximation.")
@@ -335,8 +349,19 @@ class PortfolioCalc:
             wc_key, wc_val, wc_note = self.spec.worst_case(bm)
             combined[wc_key] = round(wc_val)
             combined[wc_key.replace("_usd", "_note")] = wc_note
+        nk = self.spec.net_key
+        if nk and nk in combined and len(valid) > 1:
+            # Sharing rules are not linear, so one pooled ACO differs from the sum of standalone TIN results.
+            combined["sum_of_standalone_tin_results_usd"] = round(sum(self.spec.share(r.margin, r.bm_usd).get(nk, 0) for r in valid))
+            combined["settlement_method_note"] = (
+                f"{nk} applies the sharing rules once to the pooled margin of all the TINs, as one ACO. "
+                "sum_of_standalone_tin_results_usd applies them to each TIN separately and adds the results (what summing "
+                "the workbook's per-TIN column gives). The two differ because gains and losses net against each other "
+                "when pooled. Report the pooled figure and say it is pooled; neither is a CMS consolidated calculation.")
         for label, expr in self.spec.extra_sums.items():
             combined[label] = round(self._sum(expr, ids))
+        for label, expr in self.spec.extra_distinct.items():
+            combined[label] = self._distinct(expr, ids)
         if "enhanced_pcc_repayment_usd" in combined:
             combined["total_monies_owed_usd"] = round(combined["net_shared_savings_usd"] + combined["enhanced_pcc_repayment_usd"])
         out = {
@@ -347,33 +372,51 @@ class PortfolioCalc:
                 {"tin": r.tin, "organization": r.org, self._cls_key(): r.cls, "person_years": round(r.py, 1),
                  "benchmark_usd": round(r.bm_usd), "expense_usd": round(r.exp_usd), "gross_margin_usd": round(r.margin),
                  "mlr": round(r.mlr, 4) if r.mlr is not None else None,
-                 **({"headroom_usd_at_target": round(r.headroom(target_mlr))} if target_mlr else {})}
+                 **({"room_under_target_usd": round(r.headroom(target_mlr))} if target_mlr else {})}
                 for r in valid],
             "warnings": warnings,
         }
         if target_mlr and bm > 0:
-            slack = sum(r.headroom(target_mlr) for r in valid)
+            room = sum(r.headroom(target_mlr) for r in valid)
             out["target"] = {
-                "target_mlr": target_mlr, "meets_target": slack >= 0, "slack_usd": round(slack),
-                "meaning": ("Positive slack: expense can rise by this much (or benchmark fall) before the combined MLR "
-                            "exceeds the target. Negative: expense must fall by this much to reach it."),
+                "target_mlr": target_mlr, "meets_target": room >= 0, "room_under_target_usd": round(room),
+                "meaning": ("Positive: room under the target — expense can rise by this much (or benchmark fall) before "
+                            "the combined MLR exceeds the target. Negative: the spending reduction needed to reach it."),
             }
         if expense_change_pct or benchmark_change_pct:
             out["stress_test"] = {"expense_change_pct": expense_change_pct, "benchmark_change_pct": benchmark_change_pct,
-                                  "note": "All figures are AFTER applying these changes to every TIN. Call again "
-                                          "without them for the base case."}
-        out["cohorts"] = self._cohorts(ids)
+                                  "note": "Benchmark, expense, margin, MLR, sharing, per-TIN rows and cohorts are AFTER "
+                                          "applying these changes to every TIN. Sums read from the workbook (enhanced PCC "
+                                          "repayment, financial guarantee, quality withhold, other adjustments) stay at "
+                                          "their base-case values. Call again without the changes for the base case."}
+        out["cohorts"] = self._cohorts(ids, target_mlr, 1 + expense_change_pct / 100, 1 + benchmark_change_pct / 100)
         if out["cohorts"]:
             cb = sum(c["benchmark_usd"] for c in out["cohorts"]); ce = sum(c["expense_usd"] for c in out["cohorts"])
-            out["cohort_note"] = (f"Cohort benchmarks and expenses are on the same basis as the combined figures (after discount "
-                                  f"and quality) and sum to ${cb:,.0f} / ${ce:,.0f} vs combined ${combined['benchmark_usd']:,.0f} / "
-                                  f"${combined['expense_usd']:,.0f}.")
+            basis = " (after discount and quality)" if isinstance(self.spec, LeadSpec) else ""
+            out["cohort_note"] = (f"Cohort benchmarks and expenses are on the same basis as the combined figures{basis} "
+                                  f"and sum to ${cb:,.0f} / ${ce:,.0f} vs combined ${combined['benchmark_usd']:,.0f} / "
+                                  f"${combined['expense_usd']:,.0f}."
+                                  + (" Cohort benchmarks are derived, not workbook columns: each TIN's benchmark discount is "
+                                     "allocated to its cohorts pro rata. Say so when you report them."
+                                     if isinstance(self.spec, LeadSpec) else "")
+                                  + (" room_under_target_usd is target × cohort benchmark − cohort expense; the cohort values "
+                                     "sum to the portfolio's room_under_target_usd, so a negative value is that cohort's "
+                                     "contribution to the target gap." if target_mlr else ""))
         return out
 
     def _cls_key(self) -> str:
         return re.sub(r"[^a-z0-9]+", "_", self.spec.cls_header.lower()).strip("_")
 
-    def _cohorts(self, tins: list[str]) -> list[dict]:
+    def _distinct(self, expr: str, tins: list[str]) -> list:
+        if not tins:
+            return []
+        rows = self.wh.con.cursor().execute(
+            f'SELECT DISTINCT {expr} FROM "{self.spec.table}" WHERE {self.spec.tin} IN ({", ".join("?" * len(tins))}) ORDER BY 1',
+            tins).fetchall()
+        return [r[0] for r in rows if r[0] is not None]
+
+    def _cohorts(self, tins: list[str], target_mlr: float | None = None,
+                 expense_factor: float = 1.0, benchmark_factor: float = 1.0) -> list[dict]:
         if not tins or not self.spec.cohorts:
             return []
         parts = [f"sum({py}), sum({bm}), sum({ex})" for _, py, bm, ex in self.spec.cohorts]
@@ -383,8 +426,10 @@ class PortfolioCalc:
         out = []
         for i, (name, *_rest) in enumerate(self.spec.cohorts):
             py, bm, ex = (float(x or 0) for x in r[3 * i: 3 * i + 3])
+            bm, ex = bm * benchmark_factor, ex * expense_factor   # stress test: same scaling as the TIN rows
             out.append({"cohort": name, "person_years": round(py, 1), "benchmark_usd": round(bm), "expense_usd": round(ex),
-                        "gross_margin_usd": round(bm - ex), "mlr": round(ex / bm, 4) if bm > 0 else None})
+                        "gross_margin_usd": round(bm - ex), "mlr": round(ex / bm, 4) if bm > 0 else None,
+                        **({"room_under_target_usd": round(target_mlr * bm - ex)} if target_mlr else {})})
         return out
 
     # --------------------------------------------------------------- suggest
@@ -393,20 +438,23 @@ class PortfolioCalc:
                 min_person_years: float | None = None, max_person_years: float | None = None,
                 limit: int = 25) -> dict:
         cur_rows, unknown = self.fetch(current)
-        cur_rows = [r for r in cur_rows if r.bm_usd > 0]
-        slack = sum(r.headroom(target_mlr) for r in cur_rows)
+        cur_rows, _, no_expense = self._usable(cur_rows)
+        room = sum(r.headroom(target_mlr) for r in cur_rows)
         bm_cur = sum(r.bm_usd for r in cur_rows)
         ex_cur = sum(r.exp_usd for r in cur_rows)
         out: dict = {
             "program": self.program,
             "target_mlr": target_mlr,
             "current": {"tin_count": len(cur_rows), "benchmark_usd": round(bm_cur),
-                        "mlr": round(ex_cur / bm_cur, 4) if bm_cur else None, "slack_usd": round(slack),
-                        "meets_target": slack >= 0},
+                        "mlr": round(ex_cur / bm_cur, 4) if bm_cur else None, "room_under_target_usd": round(room),
+                        "meets_target": room >= 0},
             "warnings": [f"{len(unknown)} TIN(s) not in the {self.program} data: {', '.join(unknown[:20])}"] if unknown else [],
         }
+        if no_expense:
+            out["warnings"].append(f"{len(no_expense)} TIN(s) have a benchmark but no projected expense in the workbook "
+                                   f"and were left out: {', '.join(no_expense[:20])}")
 
-        if cur_rows and slack < 0:
+        if cur_rows and room < 0:
             if all(r.headroom(target_mlr) < 0 for r in cur_rows):
                 best = min(cur_rows, key=lambda r: r.mlr)
                 out["remove_to_reach_target"] = {
@@ -415,88 +463,112 @@ class PortfolioCalc:
                             f"The lowest is {best.tin} ({best.org}) at MLR {best.mlr:.4f}.",
                 }
             else:
-                removed, running = [], slack
+                removed, running, bm_left, ex_left = [], room, bm_cur, ex_cur
                 for r in sorted(cur_rows, key=lambda r: r.headroom(target_mlr)):
                     if running >= 0:
                         break
                     running -= r.headroom(target_mlr)
+                    bm_left -= r.bm_usd
+                    ex_left -= r.exp_usd
                     removed.append({"tin": r.tin, "organization": r.org, "mlr": round(r.mlr, 4),
-                                    "benchmark_usd": round(r.bm_usd), "headroom_usd": round(r.headroom(target_mlr)),
-                                    "mlr_after_removal": round(self._mlr_without(cur_rows, [x["tin"] for x in removed] + [r.tin]), 4)})
-                out["remove_to_reach_target"] = {"possible": True,
-                                                 "note": "Fewest TINs to drop (largest MLR drag first) so the rest meet the target.",
-                                                 "tins": removed}
+                                    "benchmark_usd": round(r.bm_usd), "room_under_target_usd": round(r.headroom(target_mlr)),
+                                    "mlr_after_removal": round(ex_left / bm_left, 4) if bm_left > 0 else 0.0})
+                out["remove_to_reach_target"] = {
+                    "possible": True,
+                    "note": "Fewest TINs to drop (largest contribution to the target gap first) so the rest meet the target."
+                            + ("" if len(removed) <= limit else f" Only the first {limit} of {len(removed)} are listed."),
+                    "tins_to_remove": len(removed), "tins": removed[:limit]}
 
+        # Candidates are screened, ranked and cut to `limit` in SQL, so only the rows that are shown leave the database.
+        # Ties keep file order (rowid).
+        s = self.spec
         exclude_set = set(current) | set(exclude or [])
-        where, params = [f"{self.spec.bm_usd} > 0"], []
+        where, params = [f"{s.bm_usd} > 0", f"({s.exp_usd}) IS NOT NULL"], []
         if exclude_set:
-            where.append(f'{self.spec.tin} NOT IN ({", ".join("?" * len(exclude_set))})')
+            where.append(f'{s.tin} NOT IN ({", ".join("?" * len(exclude_set))})')
             params += list(exclude_set)
         if name_like:
-            where.append(f"{self.spec.org} ILIKE ?")
+            where.append(f"{s.org} ILIKE ?")
             params.append(f"%{name_like}%")
-        if class_like and self.spec.cls != "''":
-            where.append(f"{self.spec.cls} ILIKE ?")
+        if class_like and s.cls != "''":
+            where.append(f"{s.cls} ILIKE ?")
             params.append(f"%{class_like}%")
         if min_person_years is not None:
-            where.append(f"{self.spec.py} >= ?")
+            where.append(f"{s.py} >= ?")
             params.append(min_person_years)
         if max_person_years is not None:
-            where.append(f"{self.spec.py} <= ?")
+            where.append(f"{s.py} <= ?")
             params.append(max_person_years)
-        cands = self._select(" AND ".join(where), params)
-        fits_alone = [r for r in cands if r.headroom(target_mlr) >= 0]
-        fits_with_slack = [r for r in cands if -slack <= r.headroom(target_mlr) < 0] if slack > 0 else []
+        cte = (f"WITH c AS (SELECT {s.tin} AS tin, {s.npi} AS npi, {s.org} AS org, {s.cls} AS cls, {s.py} AS py, "
+               f"{s.benes} AS benes, CAST({s.bm_usd} AS DOUBLE) AS bm, CAST({s.exp_usd} AS DOUBLE) AS ex, rowid AS rid "
+               f'FROM "{s.table}" WHERE {" AND ".join(where)}), '
+               f"h AS (SELECT *, ? * bm - ex AS room FROM c) ")
+        base = params + [target_mlr]
+        cols = "tin, npi, org, cls, py, benes, bm, ex"
+
+        def run(tail: str, extra: list | None = None) -> list:
+            return self.wh.con.cursor().execute(cte + tail, base + (extra or [])).fetchall()
 
         def fmt(r: Row, extra: dict | None = None):
             d = {"tin": r.tin, "organization": r.org, self._cls_key(): r.cls, "person_years": round(r.py, 1),
                  "benchmark_usd": round(r.bm_usd), "gross_margin_usd": round(r.margin), "mlr": round(r.mlr, 4),
-                 "headroom_usd": round(r.headroom(target_mlr))}
+                 "room_under_target_usd": round(r.headroom(target_mlr))}
             d.update(extra or {})
             return d
 
+        def top(cond: str, order: str, extra: list | None = None) -> list[Row]:
+            return [_row(r) for r in run(f"SELECT {cols} FROM h WHERE {cond} ORDER BY {order}, rid LIMIT ?",
+                                         (extra or []) + [limit])]
+
+        # "Fits within the current room": individually above the target, by no more than the portfolio's room.
+        screened, fits_alone, fits_within_room = run(
+            "SELECT count(*), count(*) FILTER (WHERE room >= 0), count(*) FILTER (WHERE room < 0 AND room >= ?) FROM h",
+            [-room])[0]
         out["candidates"] = {
-            "screened": len(cands),
-            "with_mlr_at_or_below_target": len(fits_alone),
-            "largest_by_benchmark": [fmt(r) for r in sorted(fits_alone, key=lambda r: -r.bm_usd)[:limit]],
-            "largest_by_margin": [fmt(r) for r in sorted(fits_alone, key=lambda r: -r.margin)[:limit]],
+            "screened": screened,
+            "with_mlr_at_or_below_target": fits_alone,
+            "largest_by_benchmark": [fmt(r) for r in top("room >= 0", "bm DESC")],
+            "largest_by_margin": [fmt(r) for r in top("room >= 0", "bm - ex DESC")],
             "note": ("TINs with MLR at or below the target can be added in any combination without breaking it. "
-                     "headroom_usd is target × benchmark − expense; a set meets the target when the sum of "
-                     "headroom (current + added) is ≥ 0."),
+                     "room_under_target_usd is target × benchmark − expense; a set meets the target when it sums "
+                     "(current + added) to ≥ 0."),
         }
-        if slack > 0 and fits_with_slack:
-            out["candidates"]["above_target_but_fit_within_current_slack"] = {
-                "count": len(fits_with_slack),
+        if room > 0 and fits_within_room:
+            out["candidates"]["above_target_but_fit_within_current_room"] = {
+                "count": fits_within_room,
                 "note": "Individually above the target, but small enough that adding ONE of them keeps the combined MLR "
-                        "within target. Adding several uses up slack: their headroom must sum to ≥ −slack.",
-                "largest_by_benchmark": [fmt(r) for r in sorted(fits_with_slack, key=lambda r: -r.bm_usd)[:limit]],
+                        "within target. Adding several uses up the room: their room_under_target_usd must sum to at "
+                        "least minus the portfolio's.",
+                "largest_by_benchmark": [fmt(r) for r in top("room < 0 AND room >= ?", "bm DESC", [-room])],
             }
-        if slack < 0:
-            plan, running, bm_run, ex_run = [], slack, bm_cur, ex_cur
-            for r in sorted(fits_alone, key=lambda r: -r.headroom(target_mlr)):
-                if running >= 0:
-                    break
-                running += r.headroom(target_mlr)
-                bm_run += r.bm_usd
-                ex_run += r.exp_usd
-                plan.append(fmt(r, {"combined_mlr_after_adding": round(ex_run / bm_run, 4)}))
+        if room < 0:
+            # Largest room first; a TIN is needed while the room added before it is still short of the gap.
+            over = "OVER (ORDER BY room DESC, rid ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)"
+            plan_cte = (f", f AS (SELECT *, sum(room) {over} AS cum_room, sum(bm) {over} AS cum_bm, sum(ex) {over} AS cum_ex, "
+                        f"row_number() OVER (ORDER BY room DESC, rid) AS rn FROM h WHERE room >= 0), "
+                        f"p AS (SELECT * FROM f WHERE cum_room - room < ?) ")
+            gap = -room
+            n, added_room, added_bm, added_ex = run(
+                plan_cte + "SELECT count(*), arg_max(cum_room, rn), arg_max(cum_bm, rn), arg_max(cum_ex, rn) FROM p", [gap])[0]
+            plan = [fmt(_row(r), {"combined_mlr_after_adding": round((ex_cur + r[9]) / (bm_cur + r[8]), 4)})
+                    for r in run(plan_cte + f"SELECT {cols}, cum_bm, cum_ex FROM p ORDER BY rn LIMIT ?", [gap, limit])]
+            bm_run, ex_run = bm_cur + (added_bm or 0), ex_cur + (added_ex or 0)
             out["add_to_reach_target"] = {
-                "reached": running >= 0,
-                "tins_needed": len(plan),
+                "reached": room + (added_room or 0) >= 0,
+                "tins_needed": n,
                 "combined_mlr_after_all_additions": round(ex_run / bm_run, 4) if bm_run else None,
-                "note": "Fewest TINs to add (largest headroom first) that bring the combined MLR to the target. "
-                        "Other combinations work too if their headroom sums to at least the deficit."
-                        + ("" if len(plan) <= limit else f" Only the first {limit} of {len(plan)} are listed."),
-                "deficit_usd": round(-slack),
-                "tins": plan[:limit],
+                "note": "Fewest TINs to add (most room under the target first) that bring the combined MLR to the target. "
+                        "Other combinations work too if their room under the target sums to at least the shortfall."
+                        + ("" if n <= limit else f" Only the first {limit} of {n} are listed."),
+                "shortfall_to_target_usd": round(gap),
+                "tins": plan,
             }
         return out
 
-    @staticmethod
-    def _mlr_without(rows: list[Row], drop: list[str]) -> float:
-        keep = [r for r in rows if r.tin not in drop]
-        bm = sum(r.bm_usd for r in keep)
-        return sum(r.exp_usd for r in keep) / bm if bm else 0.0
+
+def _row(r) -> Row:
+    return Row(str(r[0]), str(r[1]), r[2] or "", str(r[3] or ""), float(r[4] or 0), float(r[5] or 0),
+               float(r[6] or 0), None if r[7] is None else float(r[7]))
 
 
 def compare_programs(calcs: dict[str, PortfolioCalc], tins: list[str]) -> dict:

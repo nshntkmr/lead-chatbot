@@ -15,3 +15,4 @@ data/*.xls
 !data/column_notes*.csv
 !data/*Dictionary*.csv
 !data/pricing.json
+evals/results/

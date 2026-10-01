@@ -224,7 +224,7 @@ MSSP ENHANCED (this workbook): MSR/MLR band ±0.5% of benchmark; 75% of savings 
 
 ## 7. Portfolio math (all verified against the CSVs)
 
-Common: combined **MLR = Σ expense $ ÷ Σ benchmark $** (never an average); margin = benchmark − expense (savings positive); headroom(target) = target × benchmark $ − expense $ per TIN; a set meets the target iff Σ headroom ≥ 0 (this makes "fewest TINs to add/remove" a sort by headroom). Stress test rescales every TIN's expense/benchmark by a percentage and never saves the portfolio.
+Common: combined **MLR = Σ expense $ ÷ Σ benchmark $** (never an average); margin = benchmark − expense (savings positive); room under target = target × benchmark $ − expense $ per TIN (`room_under_target_usd` in tool output, `Row.headroom()` in code); a set meets the target iff the sum ≥ 0 (this makes "fewest TINs to add/remove" a sort by that value). Stress test rescales every TIN's expense/benchmark by a percentage and never saves the portfolio.
 
 LEAD: benchmark $ = `Benchmark PBPM after discount and earned quality` × `Person years after exposure adjustment` × 12 = `Total benchmark`; expense $ = `Projected expense PBPM` × PY × 12; shared = corridor_share(margin) then −2% sequestration; `total_monies_owed = net shared + Settlement | enhanced PCC repayment`; financial guarantee = Σ `Financial guarantee amount` (= 4% × Σ BY3 claim payments × 2.4); quality withhold at risk = 3% of benchmark. **Cohorts:** `Updated benchmark PBPM | k | PY2027` is pre-discount, so it is multiplied by (`Benchmark PBPM after discount and earned quality` ÷ `Benchmark PBPM before discount`) — without this, cohorts summed to $180.0M vs a $174.6M total and High Needs looked profitable (this was the bug Codex/ChatGPT flagged). `shared_loss_if_loss_equals_benchmark_usd` = 33.75% of benchmark is a **scenario** (LEAD corridors have no ceiling); MSSP's `max_shared_loss_under_enhanced_cap_usd` = 15% of benchmark is a **hard cap**.
 
@@ -285,6 +285,15 @@ usage(id, username, conversation_id, ts, model, provider, kind chat|summary,
 | Fix "didn't work" after restart | Deployed `portfolio.py`/`context-lead.md` were stale; re-deployed, md5-verified, added `APP_VERSION` |
 | Chart currency ticks / label clipping on mobile | Formatting and truncation in `app.js` |
 | 302 MB MSSP copy to the device timed out | Chunked `dd` copy, `cmp`-verified |
+| pandas ingest needs the whole table in RAM (~8 GB at 200,000 rows × 2,605 columns) | Data CSVs now load through DuckDB's reader (`_load_csv`: explicit dialect + `strict_mode = false`, which is what the sniffer failure above needed). Verified cell-for-cell against the pandas-built warehouse; integer columns with blanks are now BIGINT instead of DOUBLE |
+| DuckDB's multi-threaded load also ran out of memory on the wide table (100,000 rows, 24 GB machine) | Build is single-threaded with `BUILD_MEMORY_LIMIT` (4 GB default): 109 s and 4 GB peak for 103,609 × 2,605 |
+| Start-up profiled every column on each start (~13 s at 200,000 rows) | Profile stored in `_column_stats` at build time; old warehouses fall back to profiling at start |
+| `SELECT *` (7 MB for 200 rows) or a 10,000-TIN portfolio (2 MB) would overflow the model's context | Size caps on every tool result (`MAX_RESULT_CHARS_*`, `MAX_TINS_TO_CLAUDE`); browser tables capped too |
+| Blank expense treated as $0 (MLR 0 %, top candidate) | Such TINs are excluded with a warning in `metrics` and never offered by `suggest` |
+| What-if (`save=false`) overwrote the saved target; LEAD chat could query the MSSP table; prompt date fixed at start-up | Target saved only when `save` is true; `Warehouse.query(program=…)` refuses other datasets' tables; date moved to the uncached system block |
+| Prompt had to forbid the words "headroom" / "slack" that the tools themselves returned | Tool output renamed to `room_under_target_usd` / `shortfall_to_target_usd`; rule removed |
+| `suggest` pulled every candidate row into Python | Screening, ranking and the add-plan run in SQL (window sums); identical output on 154 old-vs-new scenarios |
+| `TESTING.md` was manual, so prompt edits could regress silently | `evals/` runs it automatically (54 offline checks, 25 chat cases). First run found two real misses, fixed in `context-lead.md`: the 19 zero-benchmark TINs counted as MLR ≤ 85 %, and an MSSP-only question answered with LEAD counts |
 
 ---
 
@@ -302,8 +311,8 @@ usage(id, username, conversation_id, ts, model, provider, kind chat|summary,
 ## 13. Change checklist
 
 1. Never touch `data/*_200plus.csv` or the dictionary; never commit `.env`, `app.db`, `.secret_key`, the warehouse or the big CSVs.
-2. Keep every identity in §7 true; if `portfolio.py`, `agent.py` or `data/context*.md` change, re-run `TESTING.md` A4/A5/A7 (LEAD) and B4/B5/B8 (MSSP) and compare to the golden values.
+2. Keep every identity in §7 true; if `portfolio.py`, `agent.py`, `data.py` or `data/context*.md` change, run `python -m evals.run` (at minimum `--offline`) and add a case to `evals/cases.py` for the new behaviour.
 3. Bump `APP_VERSION`; after deploying, confirm the startup log shows it and md5-compare changed files.
 4. Edit `scripts/make_lead_notes.py` (not the CSV) for LEAD column notes; keep the dictionary authoritative for MSSP.
 5. Keep the front end CDN-free and the SQL path read-only / single-SELECT.
-6. Prefer changing `data/context*.md` or the prompt rules over code when the model's *wording* or *column choice* is wrong; change `portfolio.py` only when a *number* is wrong, and prove it against the CSV first.
+6. Put behaviour in code or tool output first (names, limits, formats); use `data/context*.md` for facts about the data and the prompt rules only for what neither can carry. Prefer context over code when the model's *column choice* is wrong; change `portfolio.py` only when a *number* is wrong, and prove it against the CSV first.

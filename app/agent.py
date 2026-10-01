@@ -12,7 +12,7 @@ from typing import AsyncIterator
 from anthropic import AsyncAnthropic
 
 from . import config
-from .data import Warehouse
+from .data import Warehouse, fit_rows
 from .portfolio import PortfolioCalc, build_spec, clean_tins, compare_programs
 
 log = logging.getLogger(__name__)
@@ -41,8 +41,9 @@ TOOLS = [
     {
         "name": "run_sql",
         "description": (
-            "Run one read-only DuckDB SELECT query and get the result back (max 200 rows). Use this to compute "
-            "every number you report. Quote identifiers with double quotes."),
+            "Run one read-only DuckDB SELECT query and get the result back (max 200 rows; fewer when rows are "
+            "wide, so select only the columns you need). Use this to compute every number you report. Quote "
+            "identifiers with double quotes."),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -95,7 +96,7 @@ TOOLS = [
             "cohort split (A&D / High Needs / ESRD). Also maintains the user's working portfolio for this chat: "
             "action 'set' replaces it with these TINs, 'add'/'remove' change it, 'current' reports the saved one. "
             "Use 'add'/'remove' with save=false for a what-if that should not change the working portfolio. "
-            "Pass target_mlr to get headroom/slack against a target. expense_change_pct / benchmark_change_pct run a "
+            "Pass target_mlr to get the room under (or shortfall to) a target. expense_change_pct / benchmark_change_pct run a "
             "stress test (what if costs run 3% hot). Also returns the financial guarantee, quality withhold at risk and "
             "the worst-case loss after corridors. Use this tool, not run_sql, whenever the user asks about 'my TINs', "
             "a list of TINs, the effect of adding/removing TINs, or a what-if on their portfolio."),
@@ -116,10 +117,10 @@ TOOLS = [
         "name": "portfolio_suggest",
         "description": (
             "Which TINs to add or drop to reach or stay within an MLR target. Given the working portfolio (or an "
-            "explicit TIN list) and a target MLR, returns: current slack against the target; the fewest TINs to "
+            "explicit TIN list) and a target MLR, returns: the current room under the target; the fewest TINs to "
             "REMOVE to meet it; the fewest TINs to ADD to meet it; and screened candidate TINs that can be added "
             "without breaking it (largest by benchmark and by margin), with optional filters. Exact and deterministic: "
-            "headroom = target × benchmark $ − expense $, and a set meets the target when total headroom ≥ 0. "
+            "room under target = target × benchmark $ − expense $, and a set meets the target when it sums to ≥ 0. "
             "Use it for questions like 'which TINs can I include and stay under 85%'. Say the target in the answer."),
         "input_schema": {
             "type": "object",
@@ -153,8 +154,7 @@ COMPARE_TOOL = {
 }
 
 SYSTEM_TEMPLATE = """You are {app_name}, a data analyst assistant inside a company web app. Business users ask \
-questions in plain English; you answer them from the data tables described below by querying them with tools. \
-Today is {today}.
+questions in plain English; you answer them from the data tables described below by querying them with tools.
 {program_intro}
 
 # How to work
@@ -170,7 +170,8 @@ domain notes below) when explaining what a number means. When several columns co
 name it in your answer, and mention the alternative.
 4. ID columns such as TIN and NPI are text: compare as strings, e.g. WHERE "TIN" = '10198331'. Organization \
 names: match with ILIKE '%name%' and confirm the match before answering.
-5. Aggregate in SQL instead of pulling raw rows; results give you at most 200 rows.
+5. Aggregate in SQL instead of pulling raw rows; results give you at most 200 rows, and fewer when the rows are \
+wide — never SELECT * from these tables.
 6. Use create_chart when a ranking, comparison, distribution or trend is easier to see than read, and always when \
 the user asks for a chart or graph. Use show_table for lists longer than ~10 rows or when the user wants to export; \
 the user sees the whole table, so don't repeat it in text.
@@ -186,8 +187,52 @@ portfolio" and update it when the user changes their list. For these users (actu
 combined MLR, benchmark $, margin $ and person-years, state the target and whether it is met, and put per-TIN detail \
 in a table. Say when a figure is an approximation (mixed spending classes, TINs sharing an NPI). Use the numbers the \
 portfolio tools return — including their per-TIN table, cohort block and settlement lines — rather than recomputing \
-them with run_sql or repeating the table with show_table; the tool keeps every figure on one consistent basis.
-10. SQL dialect is DuckDB: quantile_cont(x, 0.5), median(x), ILIKE, TRY_CAST, round(x, 2), FILTER (WHERE …), \
+them with run_sql or repeating the table with show_table; the tool keeps every figure on one consistent basis. \
+The portfolio tools already show the user a per-TIN table with a TOTAL row, so do not repeat the per-TIN rows or \
+the combined figures a second time in your text: give the answer and the target gap first, then only what the table \
+does not show (settlement lines, cohorts, caveats). The same holds for the candidates table that portfolio_suggest \
+shows: do not list those candidates again in a table of your own; give the add or remove plan in a small table, and \
+at most name two or three other candidates in a sentence, pointing to the table above for the rest. Describe cohorts by their numbers, not by judgement: say which \
+cohort contributes the largest dollar shortfall to the target (its negative room_under_target_usd) rather than \
+calling it "the problem". Describe model parameters as what these projections apply, using the values the tool returns (LEAD: \
+benchmark_discount_rates_applied — "all five TIN projections apply a 3% benchmark discount"); never write that a \
+classification means a rule applies. The settlement figure applies the sharing rules to the pooled margin as one ACO: \
+say "pooled" when you report it, and when sum_of_standalone_tin_results_usd differs materially mention that summing \
+the TINs' standalone results gives that other figure. In a stress test, the PCC repayment, guarantee and withhold stay \
+at base case; say so. TINs returned by portfolio_suggest are mathematical candidates: name the objective (fewest \
+additions, largest by benchmark…) and say that operational eligibility and beneficiary overlap have not been checked. \
+Suggestions never change the saved portfolio; only an explicit instruction from the user does. A stress test or \
+what-if applies only to the question that asked for it: later questions go back to the base case, and you do not \
+re-run or extend an earlier scenario (for example on a new set of TINs) unless the user asks.
+10. Business language. The readers are executives, not developers. Never mention tool names, field names or the \
+words "the tool" or any paraphrase of it ("the suggestion tool", "the screen I ran", "my query") — no \
+portfolio_metrics, run_sql or "via …" in the answer or the "Based on" line, which lists workbook column \
+names only. State a limit as a fact about the analysis ("candidates were screened on the base case"), not about tooling. Say "spending reduction needed to reach the \
+target" for a shortfall, "room under the target" for a surplus, and "contribution to the target gap" for a TIN's or \
+cohort's share. Keep three measures apart and label each: gross savings (before sharing), shared savings (after \
+corridors/sharing and sequestration) and projected net settlement (after repayments).
+11. Corrections. Results from earlier turns may be shown to you shortened to save space; the full result was in front \
+of you when you wrote that earlier answer. Never retract or cast doubt on an earlier statement because its \
+supporting detail is no longer visible. If you need to re-check a TIN or figure, query that specific TIN first; \
+correct only what the query shows to be wrong, and say "not re-verified" rather than "incorrect" for anything you \
+did not re-check. A TIN missing from a top-N list is not missing from the data.
+12. Precision of claims. (a) Any count you state against a threshold ("two are at or below 90%", "five exceed \
+100%") must come from a query on the unrounded values, never from reading rounded figures in a table. The same goes \
+for vague quantifiers: do not write "several", "most" or "a few" about rows against a threshold — count them in the \
+query and give the number ("all 20 are above 85%"). (b) Answer the \
+question that was asked; do not volunteer conclusions about relationships, causes or data quality. Comparing a top-N \
+group with everyone else shows nothing about a relationship; if the user asks for one, analyse it across all eligible \
+rows. When you do compare a subset with "the rest", exclude the subset from the rest and label both. (c) When a word \
+in the question fits more than one column and the choice changes the result (e.g. "beneficiaries": the PY2027 count \
+vs the 2026 base-year count), state the basis you used and say in one line that the other basis gives a different \
+list. Do this only when that column is actually used to filter or rank the result; if it is merely displayed, or not \
+used at all, say nothing about alternative bases. (d) When rows drop out for missing data, report how many within the \
+filtered population, not the whole table. (e) Tables (show_table and ranking tables): show the identifier, name, the \
+filter column, the ranked measure and the measures asked for, with units and years in the headers; leave other \
+columns out unless asked (no NPI, beneficiary counts or duplicate measures the user did not request). Return MLRs and \
+other ratios as percentages in the SQL — round(100 * expense / benchmark, 2) AS "MLR %" — never as fractions like \
+0.8735, in tables and charts alike.
+13. SQL dialect is DuckDB: quantile_cont(x, 0.5), median(x), ILIKE, TRY_CAST, round(x, 2), FILTER (WHERE …), \
 QUALIFY, GROUP BY ALL. Only SELECT statements are allowed.
 
 # Data
@@ -252,15 +297,18 @@ class Agent:
             specific = _read_text(config.DATA_DIR / f"context-{pid.lower()}.md")
             others = [f"{o['label']} ({oid})" for oid, o in self.programs.items() if oid != pid]
             intro = (f"This chat is scoped to the **{info['label']}** dataset ({info['description']}). "
-                     + (f"Other datasets in this app: {', '.join(others)} — the user can start a new chat for those; "
-                        f"for a side-by-side view of the same TINs use compare_programs." if others else ""))
+                     + (f"Other datasets in this app: {', '.join(others)}. Queries here can only read this chat's "
+                        f"dataset: when a question is about a figure or concept that exists only in another one, say "
+                        f"which dataset holds it and that the user needs to start a new chat on that dataset — do not "
+                        f"offer to run it here. For a side-by-side view of the same TINs use compare_programs."
+                        if others else ""))
             context = ""
             if shared:
                 context += f"\n# Shared notes about these workbooks\n{shared}\n"
             if specific:
                 context += f"\n# Domain reference: {info['label']}\n{specific}\n"
             self.system_texts[pid] = SYSTEM_TEMPLATE.format(
-                app_name=config.APP_NAME, today=dt.date.today().isoformat(), program_intro=intro,
+                app_name=config.APP_NAME, program_intro=intro,
                 schema=warehouse.schema_summary(pid), context=context)
         self.default_program = next(iter(self.programs)) if len(self.programs) == 1 else None
 
@@ -282,7 +330,8 @@ class Agent:
                 "detail": f"{n} match{'es' if n != 1 else ''}", "ok": "error" not in res}
 
         if name == "run_sql":
-            res = self.wh.query(args.get("sql", ""), config.MAX_ROWS_TO_CLAUDE)
+            res = self.wh.query(args.get("sql", ""), config.MAX_ROWS_TO_CLAUDE, program=program,
+                                max_chars=config.MAX_RESULT_CHARS_TO_CLAUDE)
             block = {"type": "tool", "name": name, "label": args.get("purpose") or "Ran a query",
                      "sql": args.get("sql", ""), "ok": "error" not in res}
             if "error" in res:
@@ -292,18 +341,19 @@ class Agent:
             return json.dumps(res, default=str), block
 
         if name == "show_table":
-            res = self.wh.query(args.get("sql", ""), config.MAX_ROWS_TO_UI)
+            res = self.wh.query(args.get("sql", ""), config.MAX_ROWS_TO_UI, program=program,
+                                max_chars=config.MAX_RESULT_CHARS_TO_UI)
             if "error" in res:
                 return json.dumps(res), {"type": "tool", "name": name, "label": args.get("title", "Table"),
                                          "sql": args.get("sql", ""), "ok": False, "detail": res["error"][:300]}
             preview = {"shown_to_user": True, "row_count": res["row_count"], "truncated": res["truncated"],
-                       "columns": res["columns"], "first_rows": res["rows"][:15]}
+                       **_preview(res["columns"], res["rows"], 15, "first_rows")}
             return json.dumps(preview, default=str), {
                 "type": "table", "title": args.get("title", ""), "sql": args.get("sql", ""),
                 "columns": res["columns"], "rows": res["rows"], "truncated": res["truncated"]}
 
         if name == "create_chart":
-            return self._chart(args)
+            return self._chart(args, program)
 
         if name == "portfolio_metrics":
             return self._portfolio_metrics(args, state, program)
@@ -316,10 +366,10 @@ class Agent:
 
         return json.dumps({"error": f"Unknown tool {name}"}), {"type": "tool", "name": name, "label": name, "ok": False}
 
-    def _chart(self, a: dict) -> tuple[str, dict]:
+    def _chart(self, a: dict, program: str | None = None) -> tuple[str, dict]:
         ctype = a.get("chart_type", "bar")
         limit = 20000 if ctype == "scatter" else 1000
-        res = self.wh.query(a.get("sql", ""), limit)
+        res = self.wh.query(a.get("sql", ""), limit, program=program, max_chars=config.MAX_RESULT_CHARS_TO_UI)
         fail = {"type": "tool", "name": "create_chart", "label": a.get("title", "Chart"),
                 "sql": a.get("sql", ""), "ok": False}
         if "error" in res:
@@ -353,7 +403,7 @@ class Agent:
                  "value_format": a.get("value_format", "number"), "sql": a.get("sql", ""),
                  "truncated": res["truncated"]}
         back = {"chart_shown_to_user": True, "points": len(rows), "truncated": res["truncated"],
-                "columns": cols, "rows": rows[:40]}
+                **_preview(cols, rows, 40, "rows")}
         return json.dumps(back, default=str), chart
 
     # ------------------------------------------------------------ portfolio
@@ -384,18 +434,19 @@ class Agent:
             save = False
         if save and action != "current":
             state["portfolio"] = [t["tin"] for t in res["tins"]]
-        if a.get("target_mlr"):
+        if a.get("target_mlr") and save:   # a what-if (save=false) or stress test leaves the saved target alone
             state["target_mlr"] = a["target_mlr"]
         res["working_portfolio_saved"] = bool(save and action != "current")
-        res["working_portfolio"] = state.get("portfolio", [])
+        res.update(_tin_list("working_portfolio", state.get("portfolio", [])))
         c = res["combined"]
         pct = lambda v: round(v * 100, 2) if v is not None else None
         ck = calc._cls_key()
         cols = ["TIN", "Organization", calc.spec.cls_header, "Person years", "Benchmark $", "Expense $", "Gross margin $", "MLR %"]
         rows = [[t["tin"], t["organization"], t.get(ck, ""), t["person_years"], t["benchmark_usd"], t["expense_usd"],
                  t["gross_margin_usd"], pct(t["mlr"])] for t in res["tins"]]
-        rows.append(["TOTAL", f"{res['tin_count']} TINs", "", c["person_years"], c["benchmark_usd"], c["expense_usd"],
-                     c["gross_margin_usd"], pct(c["mlr"])])
+        shown = rows[:config.MAX_ROWS_TO_UI]
+        rows = shown + [["TOTAL", f"{res['tin_count']} TINs", "", c["person_years"], c["benchmark_usd"], c["expense_usd"],
+                         c["gross_margin_usd"], pct(c["mlr"])]]
         label = {"set": "Portfolio", "add": "Portfolio after adding", "remove": "Portfolio after removing", "current": "Current portfolio"}[action]
         title = f"{program} {label.lower()}: {res['tin_count']} TINs · MLR {c['mlr']:.1%}" if c["mlr"] is not None else label
         if shock_e or shock_b:
@@ -407,7 +458,13 @@ class Agent:
                f"margin ${c['gross_margin_usd']/1e6:,.1f}M · {c['person_years']:,.0f} person-years")
         if res.get("target"):
             sub += f" · {'meets' if res['target']['meets_target'] else 'misses'} {res['target']['target_mlr']:.0%} target"
-        block = {"type": "table", "title": title, "sql": "", "columns": cols, "rows": rows, "truncated": False, "subtitle": sub}
+        block = {"type": "table", "title": title, "sql": "", "columns": cols, "rows": rows,
+                 "truncated": len(shown) < res["tin_count"], "subtitle": sub}
+        if res["tin_count"] > config.MAX_TINS_TO_CLAUDE:   # totals and cohorts above still cover every TIN
+            res["tins"] = sorted(res["tins"], key=lambda t: -t["benchmark_usd"])[:config.MAX_TINS_TO_CLAUDE]
+            res["tins_note"] = (f"Only the {config.MAX_TINS_TO_CLAUDE} largest of {res['tin_count']} TINs by benchmark are "
+                                f"listed here. The combined figures, cohorts and target cover all {res['tin_count']}, and "
+                                f"the user's table lists them.")
         return json.dumps(res, default=str), block
 
     def _portfolio_suggest(self, a: dict, state: dict, program: str | None) -> tuple[str, dict]:
@@ -422,12 +479,12 @@ class Agent:
         res = calc.suggest(tins, target, exclude=clean_tins(a.get("exclude_tins")), name_like=a.get("name_like"),
                            class_like=a.get("spending_class"), min_person_years=a.get("min_person_years"),
                            max_person_years=a.get("max_person_years"), limit=limit)
-        res["working_portfolio"] = tins
+        res.update(_tin_list("working_portfolio", tins))
         ck = calc._cls_key()
-        cols = ["TIN", "Organization", calc.spec.cls_header, "Person years", "Benchmark $", "Gross margin $", "MLR %", "Headroom $ at target"]
+        cols = ["TIN", "Organization", calc.spec.cls_header, "Person years", "Benchmark $", "Gross margin $", "MLR %", "Room under target $"]
         cand = res["candidates"]["largest_by_benchmark"]
         rows = [[t["tin"], t["organization"], t.get(ck, ""), t["person_years"], t["benchmark_usd"], t["gross_margin_usd"],
-                 round(t["mlr"] * 100, 2), t["headroom_usd"]] for t in cand]
+                 round(t["mlr"] * 100, 2), t["room_under_target_usd"]] for t in cand]
         cur = res["current"]
         status = "meets" if cur["meets_target"] else "does not meet"
         title = (f"Candidates with MLR ≤ {target:.0%} (largest {len(cand)} of {res['candidates']['with_mlr_at_or_below_target']:,} by benchmark)"
@@ -452,6 +509,11 @@ class Agent:
                 row("Shared result $", "shared_result_usd")]
         block = {"type": "table", "title": f"Program comparison · {len(tins)} TINs", "sql": "", "columns": cols, "rows": rows,
                  "truncated": False, "subtitle": " · ".join(res['programs'][p]['shared_result_basis'] for p in pids)}
+        res.update(_tin_list("tins_requested", res["tins_requested"]))
+        if len(res["per_tin"]) > config.MAX_TINS_TO_CLAUDE:
+            res["per_tin_note"] = (f"Only the first {config.MAX_TINS_TO_CLAUDE} of {len(res['per_tin'])} TINs are listed; "
+                                   f"the program totals cover all of them.")
+            res["per_tin"] = res["per_tin"][:config.MAX_TINS_TO_CLAUDE]
         return json.dumps(res, default=str), block
 
     # ----------------------------------------------------------------- loop
@@ -469,9 +531,8 @@ class Agent:
             last_round = round_no == config.MAX_TOOL_ROUNDS
             # Static block first (cached), then the small dynamic block. Prefix caching keeps the big block warm.
             program = state.get("program") or self.default_program or next(iter(self.system_texts))
-            system = [{"type": "text", "text": self.system_texts[program], "cache_control": {"type": "ephemeral"}}]
-            if state.get("portfolio"):
-                system.append({"type": "text", "text": _state_text(state)})
+            system = [{"type": "text", "text": self.system_texts[program], "cache_control": {"type": "ephemeral"}},
+                      {"type": "text", "text": _dynamic_text(state)}]
             kwargs = dict(model=config.ANTHROPIC_MODEL, max_tokens=config.MAX_TOKENS, system=system,
                           tools=self.tools_for(program), messages=_prepare(history), **extra)
             if last_round:
@@ -563,9 +624,30 @@ def _read_text(path) -> str:
     return path.read_text(encoding="utf-8").strip() if path.exists() else ""
 
 
-def _state_text(state: dict) -> str:
+def _preview(cols: list, rows: list, n: int, key: str, max_cols: int = 60) -> dict:
+    """The first rows of something the user was shown in full, sized for Claude: at most max_cols columns and
+    as many of the first n rows as fit in the result size cap."""
+    out = {"columns": cols[:max_cols]}
+    if len(cols) > max_cols:
+        out["columns_note"] = f"First {max_cols} of {len(cols)} columns; the user sees all of them."
+    out[key] = fit_rows([r[:max_cols] for r in rows[:n]], config.MAX_RESULT_CHARS_TO_CLAUDE // 2)
+    return out
+
+
+def _tin_list(key: str, tins: list[str], shown: int = 300) -> dict:
+    """A TIN list for a tool result: the list itself, or its count and the first `shown` when it is long."""
+    if len(tins) <= shown:
+        return {key: tins}
+    return {key: tins[:shown], f"{key}_count": len(tins), f"{key}_note": f"First {shown} of {len(tins)} TINs listed."}
+
+
+def _dynamic_text(state: dict) -> str:
+    """The part of the system prompt that changes between calls; kept after the cached block."""
+    today = f"Today is {dt.date.today().isoformat()}."
     tins = state.get("portfolio") or []
-    lines = [f"# Working portfolio for this chat ({len(tins)} TINs, saved by portfolio_metrics; dataset {state.get('program', '')})",
+    if not tins:
+        return today
+    lines = [today, f"# Working portfolio for this chat ({len(tins)} TINs, saved by portfolio_metrics; dataset {state.get('program', '')})",
              ", ".join(tins[:300]) + (" …" if len(tins) > 300 else "")]
     if state.get("target_mlr"):
         lines.append(f"Target MLR: {state['target_mlr']:.2%}")
@@ -599,13 +681,15 @@ def _transcript(msgs: list) -> str:
 def _prepare(history: list) -> list:
     """Copy history for the API: shrink old tool results and add a cache breakpoint."""
     msgs = copy.deepcopy(history)
-    # Keep full tool output only for the current turn; older results get trimmed.
-    last_user_text = max((i for i, m in enumerate(msgs) if m["role"] == "user"
-                          and any(c.get("type") == "text" for c in m["content"])), default=0)
-    for m in msgs[:last_user_text]:
+    # Keep full tool output for the current and the previous exchange (follow-ups such as "add those two" or
+    # "go back to the original five" lean on the previous answer's evidence); older results get trimmed.
+    starts = _turn_starts(msgs)
+    keep_from = starts[-2] if len(starts) >= 2 else 0
+    for m in msgs[:keep_from]:
         for c in m["content"]:
             if c.get("type") == "tool_result" and isinstance(c.get("content"), str) and len(c["content"]) > 1500:
-                c["content"] = c["content"][:1500] + " …[older result trimmed]"
+                c["content"] = c["content"][:1500] + (" …[shortened to save space; the full result was available when "
+                                                      "the answer that followed was written — re-run the query to see it again]")
     if msgs and msgs[-1]["content"]:
         msgs[-1]["content"][-1]["cache_control"] = {"type": "ephemeral"}
     return msgs

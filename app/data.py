@@ -1,10 +1,11 @@
-"""Data layer: loads every CSV / Excel file in DATA_DIR into a local DuckDB
+"""Data layer: loads every CSV / Excel file in SOURCE_DIR (and DATA_DIR) into a local DuckDB
 warehouse and exposes safe, read-only helpers that Claude's tools call."""
 from __future__ import annotations
 
 import csv
 import datetime as dt
 import decimal
+import json
 import logging
 import math
 import re
@@ -47,8 +48,62 @@ def detect_program(filename: str) -> str:
     return "DATA"
 
 
+def _setting(value: str) -> str:
+    """A memory size from the environment ('4GB', '512MB'), checked before it goes into a SET statement."""
+    if not re.fullmatch(r"\d+(\.\d+)?\s?(KB|MB|GB|TB|KiB|MiB|GiB|TiB)", value, flags=re.I):
+        raise RuntimeError(f"Not a memory size: {value!r} (use e.g. 4GB)")
+    return value
+
+
+def _qi(name: str) -> str:
+    """Quote an identifier."""
+    return '"' + name.replace('"', '""') + '"'
+
+
+# Values pandas reads as missing by default. The CSV loader uses the same list so column types match
+# warehouses built by earlier versions (which read CSVs through pandas).
+_NULL_STRINGS = ["", "#N/A", "#N/A N/A", "#NA", "-1.#IND", "-1.#QNAN", "-NaN", "-nan", "1.#IND", "1.#QNAN",
+                 "<NA>", "N/A", "NA", "NULL", "NaN", "None", "n/a", "nan", "null"]
+
+
+def _load_csv(con: duckdb.DuckDBPyConnection, path: Path, tname: str) -> None:
+    """Load a data CSV with DuckDB's own reader. It streams the file, so memory stays within the build
+    connection's memory_limit however many rows there are (pandas needs the whole table in RAM: ~8 GB for
+    200,000 rows of the 2,605-column extract). See config.BUILD_THREADS for why the build is single-threaded."""
+    lit = lambda s: "'" + s.replace("'", "''") + "'"
+    opts = (f"header = true, delim = ',', quote = '\"', escape = '\"', strict_mode = false, "
+            f"normalize_names = false, nullstr = [{', '.join(lit(s) for s in _NULL_STRINGS)}], "
+            f"auto_type_candidates = ['BIGINT', 'DOUBLE', 'VARCHAR']")
+    names = [r[0] for r in con.execute(f"DESCRIBE SELECT * FROM read_csv(?, {opts})", [str(path)]).fetchall()]
+    text = [n for n in names if n.strip() in config.TEXT_COLUMNS]
+    types = ", types = {" + ", ".join(lit(n) + ": 'VARCHAR'" for n in text) + "}" if text else ""
+    select = ", ".join(f"{_qi(n)} AS {_qi(n.strip())}" for n in names)
+    # sample_size = -1: infer each column's type from every row, as pandas did.
+    con.execute(f"CREATE TABLE {_qi(tname)} AS SELECT {select} FROM read_csv(?, {opts}, sample_size = -1{types})",
+                [str(path)])
+    # Two pandas conventions the rest of the app (and the domain notes) rely on: a column of True/False is
+    # BOOLEAN — but Yes/No stays text, which DuckDB's own boolean detection would convert — and an entirely
+    # blank column is numeric.
+    kept_text = {n.strip() for n in text}
+    varchar = [r[0] for r in con.execute(
+        "SELECT column_name FROM information_schema.columns WHERE table_name = ? AND data_type = 'VARCHAR' "
+        "ORDER BY ordinal_position", [tname]).fetchall() if r[0] not in kept_text]
+    for i in range(0, len(varchar), 500):
+        chunk = varchar[i:i + 500]
+        exprs = ", ".join(f"count({_qi(n)}), count(*) FILTER (WHERE {_qi(n)} IN ('True', 'TRUE', 'true', 'False', "
+                          f"'FALSE', 'false'))" for n in chunk)
+        r = con.execute(f"SELECT count(*), {exprs} FROM {_qi(tname)}").fetchone()
+        for j, n in enumerate(chunk):
+            filled, boolean = r[1 + 2 * j], r[2 + 2 * j]
+            if filled == 0:
+                con.execute(f"ALTER TABLE {_qi(tname)} ALTER {_qi(n)} TYPE DOUBLE")
+            elif filled == boolean == r[0]:
+                con.execute(f"ALTER TABLE {_qi(tname)} ALTER {_qi(n)} TYPE BOOLEAN")
+
+
 def _read_file(path: Path) -> dict[str, pd.DataFrame]:
-    """Return {table_name: dataframe}. Excel files give one table per sheet."""
+    """Return {table_name: dataframe}. Excel files give one table per sheet. Used for Excel files and the
+    (small) column dictionary; data CSVs go through _load_csv."""
     text_dtype = {c: str for c in config.TEXT_COLUMNS}
     if path.suffix.lower() == ".csv":
         df = pd.read_csv(path, encoding="utf-8-sig", dtype=text_dtype, low_memory=False)
@@ -60,16 +115,21 @@ def _read_file(path: Path) -> dict[str, pd.DataFrame]:
 
 
 def _data_files() -> list[Path]:
-    return sorted(p for p in config.DATA_DIR.iterdir()
-                  if p.suffix.lower() in DATA_EXTS and not p.name.startswith("~$")
-                  and not p.stem.lower().startswith("column_notes"))
+    dirs = [d for d in dict.fromkeys((config.SOURCE_DIR, config.DATA_DIR)) if d.is_dir()]
+    found: dict[str, Path] = {}
+    for d in dirs:
+        for p in d.iterdir():
+            if (p.suffix.lower() in DATA_EXTS and not p.name.startswith("~$")
+                    and not p.stem.lower().startswith("column_notes")):
+                found.setdefault(p.name, p)   # the same file name in both folders is loaded once (SOURCE_DIR wins)
+    return [found[name] for name in sorted(found)]
 
 
 def build_warehouse(force: bool = False) -> None:
     """(Re)build the DuckDB file when any source file is newer than it."""
     files = _data_files()
     if not files:
-        raise RuntimeError(f"No CSV/Excel files found in {config.DATA_DIR}")
+        raise RuntimeError(f"No CSV/Excel files found in {config.SOURCE_DIR}")
     wh = config.WAREHOUSE_PATH
     if not force and wh.exists() and wh.stat().st_mtime >= max(f.stat().st_mtime for f in files):
         return
@@ -78,10 +138,32 @@ def build_warehouse(force: bool = False) -> None:
     tmp.unlink(missing_ok=True)
     con = duckdb.connect(str(tmp))
     try:
+        con.execute(f"SET threads = {max(1, config.BUILD_THREADS)}")
+        con.execute(f"SET memory_limit = '{_setting(config.BUILD_MEMORY_LIMIT)}'")
         con.execute("CREATE TABLE _column_dictionary (header VARCHAR, units VARCHAR, definition VARCHAR, notes VARCHAR, "
                     "sheet VARCHAR, cell VARCHAR, formula VARCHAR, source_type VARCHAR, program VARCHAR)")
         con.execute("CREATE TABLE _tables (table_name VARCHAR, source_file VARCHAR, program VARCHAR)")
+        con.execute("CREATE TABLE _column_stats (table_name VARCHAR, column_name VARCHAR, distinct_count BIGINT, "
+                    "constant_json VARCHAR)")
+
+        def registered(tname: str, f: Path) -> None:
+            program = detect_program(f.name)
+            con.execute("INSERT INTO _tables VALUES (?, ?, ?)", [tname, f.name, program])
+            names = [r[0] for r in con.execute(
+                "SELECT column_name FROM information_schema.columns WHERE table_name = ? ORDER BY ordinal_position",
+                [tname]).fetchall()]
+            # Profiled once here rather than at every start-up (a scan of every column: ~13 s at 200,000 rows).
+            con.executemany("INSERT INTO _column_stats VALUES (?, ?, ?, ?)",
+                            [[tname, n, d, json.dumps(v)] for n, d, v in _column_stats(con, tname, names)])
+            rows = con.execute(f"SELECT count(*) FROM {_qi(tname)}").fetchone()[0]
+            log.info("  table %s [%s]: %d rows x %d cols", tname, program, rows, len(names))
+
         for f in files:
+            if f.suffix.lower() == ".csv" and not _is_dictionary(f):
+                tname = _table_name(f.stem)
+                _load_csv(con, f, tname)
+                registered(tname, f)
+                continue
             for tname, df in _read_file(f).items():
                 if _is_dictionary(f):
                     d = standardize(df)
@@ -95,13 +177,22 @@ def build_warehouse(force: bool = False) -> None:
                 con.register("df", df)
                 con.execute(f'CREATE TABLE "{tname}" AS SELECT * FROM df')
                 con.unregister("df")
-                program = detect_program(f.name)
-                con.execute("INSERT INTO _tables VALUES (?, ?, ?)", [tname, f.name, program])
-                log.info("  table %s [%s]: %d rows x %d cols", tname, program, len(df), len(df.columns))
+                registered(tname, f)
     finally:
         con.close()
     wh.unlink(missing_ok=True)
     tmp.rename(wh)
+
+
+def _column_stats(con: duckdb.DuckDBPyConnection, tname: str, names: list[str]) -> list[tuple[str, int, object]]:
+    """(column, distinct count, the single value when there is exactly one) for every column of a table."""
+    out = []
+    for i in range(0, len(names), 100):   # small batches: each DISTINCT keeps its values in memory
+        chunk = names[i:i + 100]
+        exprs = ", ".join(f"count(DISTINCT {_qi(n)}), any_value({_qi(n)})" for n in chunk)
+        r = con.execute(f"SELECT {exprs} FROM {_qi(tname)}").fetchone()
+        out.extend((n, r[2 * j], _clean(r[2 * j + 1]) if r[2 * j] == 1 else None) for j, n in enumerate(chunk))
+    return out
 
 
 # --------------------------------------------------------------------------
@@ -132,6 +223,8 @@ class Warehouse:
     def open(cls) -> "Warehouse":
         build_warehouse()
         con = duckdb.connect(str(config.WAREHOUSE_PATH), read_only=True)
+        if config.QUERY_MEMORY_LIMIT:
+            con.execute(f"SET memory_limit = '{_setting(config.QUERY_MEMORY_LIMIT)}'")
         # Claude-written SQL must not read or write anything outside the warehouse.
         con.execute("SET enable_external_access = false")
         con.execute("SET lock_configuration = true")
@@ -139,6 +232,9 @@ class Warehouse:
         wh.dictionary = Dictionary([Entry(*r) for r in con.execute(
             f"SELECT {', '.join(STD_FIELDS)} FROM _column_dictionary").fetchall()])
         dict_programs = {r[0] for r in con.execute("SELECT DISTINCT program FROM _column_dictionary").fetchall()}
+        stats: dict[tuple[str, str], tuple[int, object]] = {}
+        if con.execute("SELECT count(*) FROM information_schema.tables WHERE table_name = '_column_stats'").fetchone()[0]:
+            stats = {(t, c): (d, json.loads(v)) for t, c, d, v in con.execute("SELECT * FROM _column_stats").fetchall()}
         for tname, source, program in con.execute("SELECT table_name, source_file, program FROM _tables").fetchall():
             rows = con.execute(f'SELECT count(*) FROM "{tname}"').fetchone()[0]
             wh.tables[tname] = {"rows": rows, "source": source, "program": program}
@@ -156,7 +252,7 @@ class Warehouse:
                     col.kind, col.note = note
                     col.link = col.link or "note"
                 wh.columns.append(col)
-            wh._annotate_constants(tname)
+            wh._annotate_constants(tname, stats)
         wh._build_programs()
         return wh
 
@@ -178,17 +274,16 @@ class Warehouse:
             return list(self.tables)
         return self.programs.get(program, {}).get("tables", [])
 
-    def _annotate_constants(self, tname: str) -> None:
-        """Flag columns that are blank or hold one value in every row (model parameters etc.)."""
+    def _annotate_constants(self, tname: str, stats: dict[tuple[str, str], tuple[int, object]]) -> None:
+        """Flag columns that are blank or hold one value in every row (model parameters etc.). Uses the profile
+        stored at build time; a warehouse built before that existed is profiled here instead."""
         cols = [c for c in self.columns if c.table == tname]
-        for i in range(0, len(cols), 500):
-            chunk = cols[i:i + 500]
-            exprs = ", ".join(f'count(DISTINCT "{c.name}"), any_value("{c.name}")' for c in chunk)
-            r = self.con.execute(f'SELECT {exprs} FROM "{tname}"').fetchone()
-            for j, c in enumerate(chunk):
-                c.distinct = r[2 * j]
-                if c.distinct == 1:
-                    c.constant = _clean(r[2 * j + 1])
+        if not all((tname, c.name) in stats for c in cols):
+            stats = {(tname, n): (d, v) for n, d, v in _column_stats(self.con, tname, [c.name for c in cols])}
+        for c in cols:
+            c.distinct, constant = stats[(tname, c.name)]
+            if c.distinct == 1:
+                c.constant = constant
 
     # ---- schema text for the system prompt ------------------------------
     def schema_summary(self, program: str | None = None, max_chars: int = 90_000) -> str:
@@ -284,8 +379,9 @@ class Warehouse:
         except Exception as e:  # pragma: no cover - profiling is best-effort
             return {"profile_error": str(e)[:200]}
 
-    def query(self, sql: str, max_rows: int) -> dict:
-        """Run one read-only SELECT. Returns columns, rows (capped), row_count."""
+    def query(self, sql: str, max_rows: int, program: str | None = None, max_chars: int | None = None) -> dict:
+        """Run one read-only SELECT. Returns columns, rows (capped by count and, with max_chars, by JSON size),
+        row_count. With `program`, tables that belong to another program's dataset are refused."""
         sql = sql.strip().rstrip(";").strip()
         try:
             stmts = self.con.extract_statements(sql)
@@ -294,6 +390,16 @@ class Warehouse:
         if len(stmts) != 1 or stmts[0].type != duckdb.StatementType.SELECT:
             return {"error": "Only a single SELECT (or WITH … SELECT) statement is allowed."}
         cur = self.con.cursor()
+        if program:
+            try:
+                used = {t.lower() for t in cur.get_table_names(sql)}
+            except Exception:   # the query itself will report the problem
+                used = set()
+            other = sorted(t for t in used if t in self.tables and self.tables[t]["program"] != program)
+            if other:
+                return {"error": f"This chat is scoped to the {program} dataset. Table(s) {', '.join(other)} belong to "
+                                 f"another dataset: the user can start a new chat for it, and compare_programs gives "
+                                 f"a side-by-side view of the same TINs when it is available."}
         timer = threading.Timer(config.QUERY_TIMEOUT_SECONDS, cur.interrupt)
         timer.start()
         try:
@@ -307,8 +413,18 @@ class Warehouse:
         finally:
             timer.cancel()
         truncated = len(rows) > max_rows
-        rows = [[_clean(v) for v in r] for r in rows[:max_rows]]
-        return {"columns": cols, "rows": rows, "row_count": len(rows), "truncated": truncated}
+        rows = [[_cell(v) for v in r] for r in rows[:max_rows]]
+        out = {"columns": cols, "rows": rows, "row_count": len(rows), "truncated": truncated}
+        if max_chars is not None:
+            kept = fit_rows(rows, max_chars - len(json.dumps(cols)))   # the column names count too
+            if rows and not kept:
+                return {"error": f"The result is too wide to return ({len(cols):,} columns). Select only the columns "
+                                 f"you need."}
+            if len(kept) < len(rows):
+                out.update(rows=kept, row_count=len(kept), truncated=True,
+                           note=f"Only the first {len(kept)} rows are included because the result was too large. "
+                                f"Select fewer columns or aggregate.")
+        return out
 
 
 def _load_notes(program: str) -> dict[str, tuple[str, str]]:
@@ -434,6 +550,24 @@ def _short_type(dtype: str) -> str:
     if "DATE" in d or "TIME" in d:
         return "date"
     return "text"
+
+
+def fit_rows(rows: list, max_chars: int) -> list:
+    """The leading rows whose JSON fits in max_chars."""
+    used = 0
+    for i, r in enumerate(rows):
+        used += len(json.dumps(r, default=str)) + 2
+        if used > max_chars:
+            return rows[:i]
+    return rows
+
+
+def _cell(v):
+    """A query result value: JSON-safe, with very long text cut."""
+    v = _clean(v)
+    if isinstance(v, str) and len(v) > config.MAX_CELL_CHARS:
+        return v[:config.MAX_CELL_CHARS] + "…"
+    return v
 
 
 def _clean(v):

@@ -69,7 +69,11 @@ Passwords are stored as bcrypt hashes in `app.db`. Sessions are signed httpOnly 
 
 ## Updating the data
 
-Replace the files in `data\` and restart the app. It rebuilds `data\warehouse.duckdb` automatically whenever a source file is newer than it, which takes about 5 seconds for the current 122 MB file. To force a rebuild, run `python -m scripts.rebuild_data`.
+Replace the files in `data\` and restart the app. It rebuilds `data\warehouse.duckdb` automatically whenever a source file is newer than it, which takes about 40 seconds for the current two files. To force a rebuild, run `python -m scripts.rebuild_data`.
+
+The build streams each CSV through DuckDB on one thread with a memory cap (`BUILD_MEMORY_LIMIT`, default 4 GB), so file size is limited by disk, not RAM: a 100,000-row copy of the 2,605-column MSSP extract built in under 2 minutes with a 4 GB peak. The app assumes one row per TIN.
+
+After changing the data, the prompt or the domain notes, run `python -m evals.run` — it asks the questions in `TESTING.md` and checks the answers (about $1.50 and 2 minutes; `--offline` is free and checks the portfolio math only).
 
 ## Tuning Claude for your data
 
@@ -145,8 +149,11 @@ The column list for the current file is about 15k tokens. It's prompt-cached, so
 
 ## Deploying for a team
 
-- **Docker:** `docker build -t aco-chat . && docker run -p 8000:8000 --env-file .env -v %cd%/state:/app/state aco-chat`
-- **Azure:** the same image runs on Azure Container Apps or App Service for Containers. Store `ANTHROPIC_API_KEY` as a secret, mount a persistent volume at `/app/state` for users and chat history, and set `COOKIE_SECURE=true` behind HTTPS.
+- **Docker:** `docker build -t aco-chat . && docker run -p 8000:8000 --env-file .env -v %cd%/data:/app/source:ro -v %cd%/state:/app/state aco-chat`
+  - The image contains code and the small versioned files only (domain notes, column notes, dictionary, suggestions). **The CSV extracts are never copied into it**: mount the folder that holds them at `/app/source` (read-only is fine).
+  - `/app/state` holds everything the app writes: `app.db` (users, chats, usage) and `warehouse.duckdb`, which is built from `/app/source` on first start and rebuilt when an extract is newer. Mount a persistent volume there.
+  - Set `SECRET_KEY` in the environment, otherwise sessions are signed with a key that is lost when the container is replaced.
+- **Azure:** the same image runs on Azure Container Apps or App Service for Containers. Store the Claude key and `SECRET_KEY` as secrets, mount persistent storage at `/app/state` and the extracts at `/app/source`, and set `COOKIE_SECURE=true` behind HTTPS.
 - **Single sign-on:** login is handled in `app/main.py` (`/api/login` + `current_user`). To use Microsoft Entra ID instead of local passwords, put the app behind App Service Authentication ("Easy Auth") and read the `X-MS-CLIENT-PRINCIPAL-NAME` header in `current_user`.
 
 ## Working on this project with Claude Code

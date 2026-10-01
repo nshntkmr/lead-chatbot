@@ -21,7 +21,7 @@ def _load_dotenv() -> None:
 _load_dotenv()
 
 APP_NAME = os.getenv("APP_NAME", "ACO Data Assistant")
-APP_VERSION = "2026.10.02-1"   # bump when app/ or data/context*.md change; printed at startup and shown in the usage panel
+APP_VERSION = "2026.10.02-11"  # bump when app/ or data/context*.md change; printed at startup and shown in the usage panel
 
 # --- Claude ---------------------------------------------------------------
 # Where Claude is called: "anthropic" (Claude API) or "foundry" (Claude in Microsoft Foundry / Azure).
@@ -52,6 +52,10 @@ PRICE_MULTIPLIER = float(os.getenv("PRICE_MULTIPLIER", "1.0"))
 
 # --- Data -----------------------------------------------------------------
 DATA_DIR = Path(os.getenv("DATA_DIR", BASE_DIR / "data"))
+# Where the large CSV / Excel extracts are read from. Defaults to DATA_DIR. In a container, point it at a mounted
+# volume so the extracts are never part of the image; DATA_DIR then holds only the small versioned files (domain
+# notes, column notes, dictionary, suggestions), which are also searched for data files.
+SOURCE_DIR = Path(os.getenv("SOURCE_DIR", DATA_DIR))
 WAREHOUSE_PATH = Path(os.getenv("WAREHOUSE_PATH", DATA_DIR / "warehouse.duckdb"))
 # Columns that must stay text (IDs with leading zeros etc.)
 TEXT_COLUMNS = {c.strip() for c in os.getenv(
@@ -73,8 +77,23 @@ PROGRAM_INFO = {
     "DATA": {"label": "Data", "description": "Other data files."},
 }
 QUERY_TIMEOUT_SECONDS = float(os.getenv("QUERY_TIMEOUT_SECONDS", "30"))
+# Warehouse build. These extracts are thousands of columns wide, and DuckDB buffers a block of rows per thread
+# while loading, so a multi-threaded load of a large file runs out of memory (seen at 100,000 rows x 2,605
+# columns on a 24 GB machine). One thread keeps memory within BUILD_MEMORY_LIMIT at any row count (~90 s per
+# 100,000 rows of the widest extract). Raise BUILD_THREADS only for narrow files or with plenty of RAM.
+BUILD_THREADS = int(os.getenv("BUILD_THREADS", "1"))
+BUILD_MEMORY_LIMIT = os.getenv("BUILD_MEMORY_LIMIT", "4GB").strip()
+# Memory cap for answering queries, e.g. "2GB" in a small container. Blank = DuckDB's default (80 % of RAM).
+QUERY_MEMORY_LIMIT = os.getenv("QUERY_MEMORY_LIMIT", "").strip()
 MAX_ROWS_TO_CLAUDE = int(os.getenv("MAX_ROWS_TO_CLAUDE", "200"))
 MAX_ROWS_TO_UI = int(os.getenv("MAX_ROWS_TO_UI", "2000"))
+# Size caps on a query result (JSON characters), on top of the row caps: these tables have thousands of columns,
+# so a SELECT * of a few rows can be megabytes. Rows beyond the cap are dropped and the result is marked truncated.
+MAX_RESULT_CHARS_TO_CLAUDE = int(os.getenv("MAX_RESULT_CHARS_TO_CLAUDE", "100000"))
+MAX_RESULT_CHARS_TO_UI = int(os.getenv("MAX_RESULT_CHARS_TO_UI", "2000000"))
+MAX_CELL_CHARS = int(os.getenv("MAX_CELL_CHARS", "2000"))
+# Portfolio tools: per-TIN rows sent to Claude (the largest by benchmark; totals always cover every TIN).
+MAX_TINS_TO_CLAUDE = int(os.getenv("MAX_TINS_TO_CLAUDE", "100"))
 
 # --- App / auth -----------------------------------------------------------
 APP_DB_PATH = Path(os.getenv("APP_DB_PATH", BASE_DIR / "app.db"))
