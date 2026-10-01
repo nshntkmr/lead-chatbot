@@ -1,0 +1,6 @@
+.env
+.secret_key
+app.db
+data/warehouse.duckdb
+__pycache__
+.venv

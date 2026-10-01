@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Data Assistant</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/app.css">
+<script src="/static/vendor/marked.min.js"></script>
+<script src="/static/vendor/purify.min.js"></script>
+<script src="/static/vendor/chart.umd.min.js"></script>
+</head>
+<body>
+<div class="shell" id="shell">
+  <aside class="sidebar">
+    <div class="sidebar-top">
+      <div class="brand">
+        <span class="brand-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 19V11M10 19V5M16 19v-6M22 19H2"/></svg></span>
+        <span id="brand-name">Data Assistant</span>
+      </div>
+      <button class="new-chat" id="new-chat">
+        <span class="plus"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span>
+        New chat
+      </button>
+    </div>
+    <nav class="chat-list" id="chat-list" aria-label="Chats"></nav>
+    <div class="sidebar-foot">
+      <span class="avatar" id="avatar">?</span>
+      <button class="who-btn" id="usage-btn" title="Usage and spend">
+        <span class="who" id="who"></span>
+        <span class="spend" id="spend"></span>
+      </button>
+      <button class="icon-btn" id="logout" title="Sign out" aria-label="Sign out">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+      </button>
+    </div>
+  </aside>
+  <div class="scrim" id="scrim"></div>
+
+  <main class="main">
+    <header class="topbar">
+      <button class="icon-btn menu-toggle" id="menu-toggle" aria-label="Open chats">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      </button>
+      <div class="title" id="conv-title"></div>
+      <span class="program-chip" id="program-chip" hidden></span>
+      <span class="portfolio-chip" id="portfolio-chip" hidden></span>
+    </header>
+    <div class="scroll" id="scroll">
+      <div id="empty" class="empty" hidden>
+        <h1><svg class="spark" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.9 6.6L20.5 10l-6.6 1.9L12 18.5l-1.9-6.6L3.5 10l6.6-1.4z"/></svg><span id="greeting">Hello</span></h1>
+        <div class="program-picker" id="program-picker" hidden></div>
+        <div class="data-chip" id="data-chip"></div>
+        <div class="suggestions" id="suggestions"></div>
+      </div>
+      <div class="thread" id="thread"></div>
+    </div>
+    <div class="composer-wrap">
+      <form class="composer" id="composer">
+        <textarea id="input" rows="1" placeholder="Ask a question about your data…" aria-label="Message"></textarea>
+        <button class="send" id="send" type="submit" aria-label="Send" disabled>
+          <svg id="send-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+        </button>
+      </form>
+      <div class="disclaimer">Answers are computed from the loaded data. Check important figures before sharing.</div>
+    </div>
+  </main>
+</div>
+<div class="modal" id="usage-modal" hidden>
+  <div class="modal-card" role="dialog" aria-labelledby="usage-title">
+    <div class="modal-head"><h2 id="usage-title">Usage and spend</h2><button class="icon-btn" id="usage-close" aria-label="Close"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+    <div class="modal-body" id="usage-body"></div>
+  </div>
+</div>
+<script src="/static/app.js"></script>
+</body>
+</html>

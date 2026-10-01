@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<main class="login-wrap">
+  <form class="login-card" id="form" autocomplete="on">
+    <div class="brand">
+      <span class="brand-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 19V11M10 19V5M16 19v-6M22 19H2"/></svg></span>
+      <span id="app-name">Data Assistant</span>
+    </div>
+    <h1>Welcome back</h1>
+    <p class="sub">Sign in to ask questions about your data.</p>
+    <label class="field"><span>Username</span><input name="username" autocomplete="username" required autofocus></label>
+    <label class="field"><span>Password</span><input name="password" type="password" autocomplete="current-password" required></label>
+    <div class="form-error" id="error" role="alert"></div>
+    <button class="btn-primary" id="submit" type="submit">Sign in</button>
+  </form>
+</main>
+<script>
+  fetch('/api/config').then(r => r.json()).then(c => {
+    document.getElementById('app-name').textContent = c.app_name;
+    document.title = 'Sign in · ' + c.app_name;
+  }).catch(() => {});
+  const form = document.getElementById('form');
+  const err = document.getElementById('error');
+  const btn = document.getElementById('submit');
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    err.textContent = '';
+    btn.disabled = true; btn.textContent = 'Signing in…';
+    try {
+      const r = await fetch('/api/login', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: form.username.value, password: form.password.value })
+      });
+      if (r.ok) { location.href = '/'; return; }
+      const j = await r.json().catch(() => ({}));
+      err.textContent = j.detail || 'Sign-in failed.';
+    } catch { err.textContent = 'Could not reach the server.'; }
+    btn.disabled = false; btn.textContent = 'Sign in';
+  });
+</script>
+</body>
+</html>

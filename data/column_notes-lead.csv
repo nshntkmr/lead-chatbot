@@ -1,0 +1,358 @@
+column,kind,definition
+Renormalization Factors - [Assigned],label,Year header (2023) of the risk-renormalization table; not a factor.
+Renormalization Factors - [Assignable],label,Year header (2024) of the risk-renormalization table; not a factor.
+Renormalization Factors - [REACH],label,Year header (2025) of the risk-renormalization table; not a factor.
+Renormalization Factors - [LEAD Parameters!E26],label,Year header (2026) of the risk-renormalization table; not a factor.
+Renormalization Factors - [LEAD Parameters!F26],label,Year header (2027) of the risk-renormalization table; not a factor.
+Historical_Benchmark__B4,label,Year header (2024 = BY1) of the Historical Benchmark sheet.
+Historical_Benchmark__C4,label,Year header (2025 = BY2) of the Historical Benchmark sheet.
+Historical_Benchmark__D4,label,Year header (2026 = BY3) of the Historical Benchmark sheet.
+Historical Benchmark Calculation,label,Section caption cell; its value 'BY1' is the first column header of that table.
+Claims Alignment Benchmark Calculation,label,Section caption cell; value 'BY3' is a column header.
+Total Savings/Losses Calculation,label,Section caption cell; value 'PY2027' is a column header.
+Regional Adjustment Calculation,label,Section caption cell.
+Prior Savings Adjustment Calculation,label,Section caption cell; value 'PY Corresponding to BY1' is a column header.
+Trend Factor,label,Section caption cell; value 'BY1' is a column header.
+Trend Factor / BY1,label,Section caption cell; value 'BY3' is a column header.
+Trend_Factor__B3,label,Year header (2024) of the Trend Factor sheet.
+Trend_Factor__C3,label,Year header (2025) of the Trend Factor sheet.
+Trend_Factor__D3,label,Year header (2026) of the Trend Factor sheet.
+Trend_Factor__F3,label,Year header (2027) of the Trend Factor sheet.
+[B]Eligible Months [Benes -],label,Year header (2024) of the churn table (beneficiaries block).
+[B]Eligible Months [LEAD Historical Benchmark!H11],label,Year header (2025) of the churn table (beneficiaries block).
+[B]Eligible Months [Member Months -],label,Year header (2024) of the churn table (member-months block).
+[B]Eligible Months [LEAD Historical Benchmark!J11],label,Year header (2025) of the churn table (member-months block).
+ESRD,label,"Despite the name, a year header cell (2024) of the churn table. For ESRD data use the 'Beneficiaries | ESRD | …', 'Expenditure PBPM | ESRD | …' etc. columns."
+High Needs (HN),label,"Despite the name, a year header cell (2025) of the churn table. For High Needs data use the '… | HN | …' columns."
+Medicare Enrollment Type,label,Header cell of the PY risk table (text 'BY3 CMS-HCC Risk Score [A]').
+"Medicare Enrollment Type / BY3 CMS-HCC Risk Score
+[A]",label,Header cell of the PY risk table (text 'CMS-HCC Risk Ratio (Uncapped) [C]').
+Exp PMPM [Trend Calculations!B4],label,Year header (2023) of the trend-calculations expense table.
+Exp PMPM [Trend Calculations!C4],label,Year header (2024) of the trend-calculations expense table.
+Exp PMPM [Trend Calculations!D4],label,Year header (2025) of the trend-calculations expense table.
+Exp PMPM / Actuals [Trend Calculations!G4],label,Year header (2026) of the trend-calculations expense table.
+Exp PMPM / Actuals [Trend Calculations!H4],label,Year header (2027) of the trend-calculations expense table.
+Risk Score [2025-2026] [Trend Calculations!B39],label,Year header (2023) of the trend-calculations risk table.
+Risk Score [2026-2027],label,"Despite the name, a year header cell (2024) of the trend-calculations risk table."
+Risk Score [2025],label,Year header cell (2025) of the trend-calculations risk table.
+Risk Score [Aged & Disabled (A&D)],label,"Despite the name, a year header cell (2026) of the trend-calculations risk table. For A&D risk use 'Renormalized average risk | AD | …' or 'Capped PY risk score | AD | PY2027'."
+Risk Score [2025-2026] [Trend Calculations!F39],label,Year header (2027) of the trend-calculations risk table.
+Beneficiary Counts [2025-2026],label,Year header cell (2023) of the beneficiary-count table.
+Beneficiary Counts [2026-2027],label,Year header cell (2024) of the beneficiary-count table.
+Beneficiary Counts [2025],label,Year header cell (2025) of the beneficiary-count table.
+Beneficiary Counts [Aged & Disabled (A&D)],label,"Despite the name, a year header cell (2026) of the beneficiary-count table. For A&D counts use 'Beneficiaries | AD | <year>'."
+Exp PMPM [2023],label,Year header (2023).
+Exp PMPM [2024],label,Year header (2024).
+Exp PMPM [2025],label,Year header (2025).
+Exp PMPM [2026],label,Year header (2026).
+Risk [2023],label,Year header (2023).
+Risk [2024],label,Year header (2024).
+Risk [2025],label,Year header (2025).
+Risk [2026],label,Year header (2026).
+Trend_Calculations__A94,label,Year header (2025).
+Trend_Calculations__A95,label,Year header (2026).
+Trend_Calculations__A96,label,Year header (2027).
+Trend_Calculations__G75,label,Constant 1 (placeholder cell).
+Assignable__A3,label,Row caption 'National' of the Assignable sheet.
+Assignable__AH1,label,Template note text; not data.
+Assignable__AL1,label,Template note text; not data.
+Assignable__AP1,label,Template note text; not data.
+Assignable__AG1,label,Blank template denominator (0); not data.
+Assignable__AK1,label,Blank template denominator (0); not data.
+Assignable__AO1,label,Blank template denominator (0); not data.
+Assignable__BB1,label,Year header (2023) of the regional risk-standardized expenditure block.
+Assignable__BC1,label,Year header (2024) of the regional risk-standardized expenditure block.
+Assignable__BD1,label,Year header (2025) of the regional risk-standardized expenditure block.
+Assignable__BE1,label,Year header (2026) of the regional risk-standardized expenditure block.
+Assignable__BF1,label,Year header (2023) of the regional risk-standardized expenditure block.
+Assignable__BG1,label,Year header (2024) of the regional risk-standardized expenditure block.
+Assignable__BH1,label,Year header (2025) of the regional risk-standardized expenditure block.
+Assignable__BI1,label,Year header (2026) of the regional risk-standardized expenditure block.
+Assignable__BJ1,label,Year header (2023) of the regional risk-standardized expenditure block.
+Assignable__BK1,label,Year header (2024) of the regional risk-standardized expenditure block.
+Assignable__BL1,label,Year header (2025) of the regional risk-standardized expenditure block.
+Assignable__BM1,label,Year header (2026) of the regional risk-standardized expenditure block.
+Selected alignment type (display) [Configuration display] [Trend Calculations!B15],duplicate,Display echo of 'Alignment type' (PROSPECTIVE).
+Selected alignment type (display) [Configuration display] [Trend Calculations!F15],duplicate,Display echo of 'Alignment type' (PROSPECTIVE).
+Selected alignment type (display) [Configuration display] [Trend Calculations!B23],duplicate,Display echo of 'Alignment type' (PROSPECTIVE).
+Selected alignment type (display) [Configuration display] [Trend Calculations!B30],duplicate,Display echo of 'Alignment type' (PROSPECTIVE).
+Selected alignment type (display) [Configuration display] [Trend Calculations!B48],duplicate,Display echo of 'Alignment type' (PROSPECTIVE).
+Selected alignment type (display) [Configuration display] [Trend Calculations!F48],duplicate,Display echo of 'Alignment type' (PROSPECTIVE).
+Selected alignment type (display) [Configuration display] [Trend Calculations!B56],duplicate,Display echo of 'Alignment type' (PROSPECTIVE).
+Selected alignment type (display) [Configuration display] [Trend Calculations!B63],duplicate,Display echo of 'Alignment type' (PROSPECTIVE).
+Selected trend option (display) [Configuration display] [Trend Calculations!A30],duplicate,Display echo of 'Expense and risk trend option' (Historic).
+Selected trend option (display) [Configuration display] [Trend Calculations!A63],duplicate,Display echo of 'Expense and risk trend option' (Historic).
+PROSP__A3,label,Blank.
+PROSP__B3,raw,Blank in this extract.
+PROSP__C3,raw,Blank in this extract.
+PROSP__D3,duplicate,Same as 'Total cohort beneficiaries | 2024'.
+PROSP__E3,duplicate,Same as 'Total cohort beneficiaries | 2025'.
+PROSP__F3,duplicate,Same as 'Total cohort beneficiaries | 2026' (= 'BY3 aligned beneficiaries (2026 eligibility count)').
+PROSP__G3,duplicate,Same as '2027 aligned beneficiaries'.
+PROSP__I3,duplicate,Same as 'Treated beneficiaries [2024 AD]'.
+PROSP__J3,duplicate,Same as 'Treated beneficiaries [2025 AD]'.
+PROSP__K3,duplicate,Same as 'Treated beneficiaries [2026 AD]'.
+PROSP__M3,duplicate,Same as 'Treated beneficiaries [2024 HN]'.
+PROSP__N3,duplicate,Same as 'Treated beneficiaries [2025 HN]'.
+PROSP__O3,duplicate,Same as 'Treated beneficiaries [2026 HN]'.
+PROSP__Q3,duplicate,Same as 'Treated beneficiaries [2024 ESRD]'.
+PROSP__R3,duplicate,Same as 'Treated beneficiaries [2025 ESRD]'.
+PROSP__S3,duplicate,Same as 'Treated beneficiaries [2026 ESRD]'.
+PROSP__U3,duplicate,Same as 'Treated member months [2024 AD]'.
+PROSP__V3,duplicate,Same as 'Treated member months [2025 AD]'.
+PROSP__W3,duplicate,Same as 'Treated member months [2026 AD]'.
+PROSP__Y3,duplicate,Same as 'Treated member months [2024 HN]'.
+PROSP__Z3,duplicate,Same as 'Treated member months [2025 HN]'.
+PROSP__AA3,duplicate,Same as 'Treated member months [2026 HN]'.
+PROSP__AC3,duplicate,Same as 'Treated member months [2024 ESRD]'.
+PROSP__AD3,duplicate,Same as 'Treated member months [2025 ESRD]'.
+PROSP__AE3,duplicate,Same as 'Treated member months [2026 ESRD]'.
+PROSP__AS3,duplicate,Same as 'Raw risk [2024 AD]'.
+PROSP__AT3,duplicate,Same as 'Raw risk [2025 AD]'.
+PROSP__AU3,duplicate,Same as 'Raw risk [2026 AD]'.
+PROSP__AW3,duplicate,Same as 'Raw risk [2024 HN]'.
+PROSP__AX3,duplicate,Same as 'Raw risk [2025 HN]'.
+PROSP__AY3,duplicate,Same as 'Raw risk [2026 HN]'.
+PROSP__BA3,duplicate,Same as 'Raw risk [2024 ESRD]'.
+PROSP__BB3,duplicate,Same as 'Raw risk [2025 ESRD]'.
+PROSP__BC3,duplicate,Same as 'Raw risk [2026 ESRD]'.
+PROSP__AG3,raw,Source paid PMPM for AD 2024 from the PROSP input sheet (the 2026 value equals 'Reach PMPM [2026 AD]'; 2024–2025 differ slightly from the Reach PMPM columns). Prefer the named 'Reach PMPM' / 'Net cost PMPM' columns.
+PROSP__AH3,raw,Source paid PMPM for AD 2025 from the PROSP input sheet (the 2026 value equals 'Reach PMPM [2026 AD]'; 2024–2025 differ slightly from the Reach PMPM columns). Prefer the named 'Reach PMPM' / 'Net cost PMPM' columns.
+PROSP__AI3,raw,Source paid PMPM for AD 2026 from the PROSP input sheet (the 2026 value equals 'Reach PMPM [2026 AD]'; 2024–2025 differ slightly from the Reach PMPM columns). Prefer the named 'Reach PMPM' / 'Net cost PMPM' columns.
+PROSP__AK3,raw,Source paid PMPM for HN 2024 from the PROSP input sheet (the 2026 value equals 'Reach PMPM [2026 HN]'; 2024–2025 differ slightly from the Reach PMPM columns). Prefer the named 'Reach PMPM' / 'Net cost PMPM' columns.
+PROSP__AL3,raw,Source paid PMPM for HN 2025 from the PROSP input sheet (the 2026 value equals 'Reach PMPM [2026 HN]'; 2024–2025 differ slightly from the Reach PMPM columns). Prefer the named 'Reach PMPM' / 'Net cost PMPM' columns.
+PROSP__AM3,raw,Source paid PMPM for HN 2026 from the PROSP input sheet (the 2026 value equals 'Reach PMPM [2026 HN]'; 2024–2025 differ slightly from the Reach PMPM columns). Prefer the named 'Reach PMPM' / 'Net cost PMPM' columns.
+PROSP__AO3,raw,Source paid PMPM for ESRD 2024 from the PROSP input sheet (the 2026 value equals 'Reach PMPM [2026 ESRD]'; 2024–2025 differ slightly from the Reach PMPM columns). Prefer the named 'Reach PMPM' / 'Net cost PMPM' columns.
+PROSP__AP3,raw,Source paid PMPM for ESRD 2025 from the PROSP input sheet (the 2026 value equals 'Reach PMPM [2026 ESRD]'; 2024–2025 differ slightly from the Reach PMPM columns). Prefer the named 'Reach PMPM' / 'Net cost PMPM' columns.
+PROSP__AQ3,raw,Source paid PMPM for ESRD 2026 from the PROSP input sheet (the 2026 value equals 'Reach PMPM [2026 ESRD]'; 2024–2025 differ slightly from the Reach PMPM columns). Prefer the named 'Reach PMPM' / 'Net cost PMPM' columns.
+PROSP__H3,label,Blank spacer column of the PROSP input sheet.
+PROSP__L3,label,Blank spacer column of the PROSP input sheet.
+PROSP__P3,label,Blank spacer column of the PROSP input sheet.
+PROSP__T3,label,Blank spacer column of the PROSP input sheet.
+PROSP__X3,label,Blank spacer column of the PROSP input sheet.
+PROSP__AB3,label,Blank spacer column of the PROSP input sheet.
+PROSP__AF3,label,Blank spacer column of the PROSP input sheet.
+PROSP__AJ3,label,Blank spacer column of the PROSP input sheet.
+PROSP__AN3,label,Blank spacer column of the PROSP input sheet.
+PROSP__AR3,label,Blank spacer column of the PROSP input sheet.
+PROSP__AV3,label,Blank spacer column of the PROSP input sheet.
+PROSP__AZ3,label,Blank spacer column of the PROSP input sheet.
+PROSP_COUNTY__A3,label,Blank.
+PROSP_COUNTY__B3,label,Blank.
+PROSP_COUNTY__C3,label,Blank.
+PROSP_COUNTY__D3,raw,"County-assigned beneficiaries, A&D cohort, 2026 (county-matched population used for regional weights). D3+E3+F3 = G3."
+PROSP_COUNTY__E3,raw,"County-assigned beneficiaries, High Needs cohort, 2026. D3+E3+F3 = G3."
+PROSP_COUNTY__F3,raw,"County-assigned beneficiaries, ESRD cohort, 2026 (= Assignable__BP4). D3+E3+F3 = G3."
+PROSP_COUNTY__G3,raw,"County-assigned beneficiaries, all cohorts, 2026 (sum of D3..F3). Close to but not identical with 'Total cohort beneficiaries | 2026'."
+PROSP_COUNTY__H3,label,Blank.
+PROSP_COUNTY__I3,label,Blank.
+National [LEAD Assignable!AP3],raw,"National average risk score, AD cohort, 2023 (2023 not available: 0)."
+National [LEAD Assignable!AQ3],duplicate,"National average risk score, AD cohort, 2024 (same as 'National risk score | AD | 2024')."
+National [LEAD Assignable!AR3],duplicate,"National average risk score, AD cohort, 2025 (same as 'National risk score | AD | 2025')."
+National [LEAD Assignable!AS3],duplicate,"National average risk score, AD cohort, 2026 (same as 'National risk score | AD | 2026')."
+National [LEAD Assignable!AT3],raw,"National average risk score, HN cohort, 2023 (2023 not available: 0)."
+National [LEAD Assignable!AU3],duplicate,"National average risk score, HN cohort, 2024 (same as 'National risk score | HN | 2024')."
+National [LEAD Assignable!AV3],duplicate,"National average risk score, HN cohort, 2025 (same as 'National risk score | HN | 2025')."
+National [LEAD Assignable!AW3],duplicate,"National average risk score, HN cohort, 2026. Only source for HN 2026."
+National [LEAD Assignable!AX3],raw,"National average risk score, ESRD cohort, 2023 (2023 not available: 0)."
+National [LEAD Assignable!AY3],duplicate,"National average risk score, ESRD cohort, 2024 (same as 'National risk score | ESRD | 2024')."
+National [LEAD Assignable!AZ3],duplicate,"National average risk score, ESRD cohort, 2025 (same as 'National risk score | ESRD | 2025')."
+National [LEAD Assignable!BA3],duplicate,"National average risk score, ESRD cohort, 2026 (same as 'National risk score | ESRD | 2026')."
+National [2023] [LEAD Assignable!BB3],raw,"National assignable expenditure PBPM, AD cohort, 2023 (2023 not available: 0)."
+National [2024] [LEAD Assignable!BC3],duplicate,"National assignable expenditure PBPM, AD cohort, 2024 (same as 'National expenditure PBPM | AD | 2024')."
+National [2025] [LEAD Assignable!BD3],duplicate,"National assignable expenditure PBPM, AD cohort, 2025 (same as 'National expenditure PBPM | AD | 2025')."
+National [2026] [LEAD Assignable!BE3],duplicate,"National assignable expenditure PBPM, AD cohort, 2026 (same as 'National expenditure PBPM | AD | 2026')."
+National [2023] [LEAD Assignable!BF3],raw,"National assignable expenditure PBPM, HN cohort, 2023 (2023 not available: 0)."
+National [2024] [LEAD Assignable!BG3],duplicate,"National assignable expenditure PBPM, HN cohort, 2024 (same as 'National expenditure PBPM | HN | 2024')."
+National [2025] [LEAD Assignable!BH3],duplicate,"National assignable expenditure PBPM, HN cohort, 2025 (same as 'National expenditure PBPM | HN | 2025')."
+National [2026] [LEAD Assignable!BI3],duplicate,"National assignable expenditure PBPM, HN cohort, 2026 (same as 'National expenditure PBPM | HN | 2026')."
+National [2023] [LEAD Assignable!BJ3],raw,"National assignable expenditure PBPM, ESRD cohort, 2023 (2023 not available: 0)."
+National [2024] [LEAD Assignable!BK3],duplicate,"National assignable expenditure PBPM, ESRD cohort, 2024 (same as 'National expenditure PBPM | ESRD | 2024')."
+National [2025] [LEAD Assignable!BL3],duplicate,"National assignable expenditure PBPM, ESRD cohort, 2025 (same as 'National expenditure PBPM | ESRD | 2025')."
+National [2026] [LEAD Assignable!BM3],duplicate,"National assignable expenditure PBPM, ESRD cohort, 2026 (same as 'National expenditure PBPM | ESRD | 2026')."
+Assignable__B4,raw,"National reference total: national assignable beneficiaries, all cohorts, 2023 — not available, 0."
+Assignable__C4,raw,"National reference total: national assignable beneficiaries, all cohorts, 2024. Inferred from values (A&D + HN + ESRD = total); same in every row."
+Assignable__D4,raw,"National reference total: national assignable beneficiaries, all cohorts, 2025. Inferred from values (A&D + HN + ESRD = total); same in every row."
+Assignable__E4,raw,"National reference total: national assignable beneficiaries, all cohorts, 2026 (2026 = Jan–May). Inferred from values (A&D + HN + ESRD = total); same in every row."
+Assignable__F4,raw,"National reference total: national assignable beneficiaries, A&D, 2023 — not available, 0."
+Assignable__G4,raw,"National reference total: national assignable beneficiaries, A&D, 2024. Inferred from values (A&D + HN + ESRD = total); same in every row."
+Assignable__H4,raw,"National reference total: national assignable beneficiaries, A&D, 2025. Inferred from values (A&D + HN + ESRD = total); same in every row."
+Assignable__I4,raw,"National reference total: national assignable beneficiaries, A&D, 2026 (2026 = Jan–May). Inferred from values (A&D + HN + ESRD = total); same in every row."
+Assignable__J4,raw,"National reference total: national assignable beneficiaries, High Needs, 2023 — not available, 0."
+Assignable__K4,raw,"National reference total: national assignable beneficiaries, High Needs, 2024. Inferred from values (A&D + HN + ESRD = total); same in every row."
+Assignable__L4,raw,"National reference total: national assignable beneficiaries, High Needs, 2025. Inferred from values (A&D + HN + ESRD = total); same in every row."
+Assignable__M4,raw,"National reference total: national assignable beneficiaries, High Needs, 2026 (2026 = Jan–May). Inferred from values (A&D + HN + ESRD = total); same in every row."
+Assignable__N4,raw,"National reference total: national assignable beneficiaries, ESRD, 2023 — not available, 0."
+Assignable__O4,raw,"National reference total: national assignable beneficiaries, ESRD, 2024. Inferred from values (A&D + HN + ESRD = total); same in every row."
+Assignable__P4,raw,"National reference total: national assignable beneficiaries, ESRD, 2025. Inferred from values (A&D + HN + ESRD = total); same in every row."
+Assignable__Q4,raw,"National reference total: national assignable beneficiaries, ESRD, 2026 (2026 = Jan–May). Inferred from values (A&D + HN + ESRD = total); same in every row."
+Assignable__R4,raw,"National reference total: national assignable member months, A&D, 2023 — not available, 0."
+Assignable__S4,raw,"National reference total: national assignable member months, A&D, 2024. Inferred from values (A&D + HN + ESRD = total); same in every row."
+Assignable__T4,raw,"National reference total: national assignable member months, A&D, 2025. Inferred from values (A&D + HN + ESRD = total); same in every row."
+Assignable__U4,raw,"National reference total: national assignable member months, A&D, 2026 (2026 = Jan–May). Inferred from values (A&D + HN + ESRD = total); same in every row."
+Assignable__V4,raw,"National reference total: national assignable member months, High Needs, 2023 — not available, 0."
+Assignable__W4,raw,"National reference total: national assignable member months, High Needs, 2024. Inferred from values (A&D + HN + ESRD = total); same in every row."
+Assignable__X4,raw,"National reference total: national assignable member months, High Needs, 2025. Inferred from values (A&D + HN + ESRD = total); same in every row."
+Assignable__Y4,raw,"National reference total: national assignable member months, High Needs, 2026 (2026 = Jan–May). Inferred from values (A&D + HN + ESRD = total); same in every row."
+Assignable__Z4,raw,"National reference total: national assignable member months, ESRD, 2023 — not available, 0."
+Assignable__AA4,raw,"National reference total: national assignable member months, ESRD, 2024. Inferred from values (A&D + HN + ESRD = total); same in every row."
+Assignable__AB4,raw,"National reference total: national assignable member months, ESRD, 2025. Inferred from values (A&D + HN + ESRD = total); same in every row."
+Assignable__AC4,raw,"National reference total: national assignable member months, ESRD, 2026 (2026 = Jan–May). Inferred from values (A&D + HN + ESRD = total); same in every row."
+Assignable__AD4,raw,"National reference total: national assignable paid dollars, A&D, 2023 — not available, 0."
+Assignable__AE4,raw,"National reference total: national assignable paid dollars, A&D, 2024. Inferred from values (A&D + HN + ESRD = total); same in every row."
+Assignable__AF4,raw,"National reference total: national assignable paid dollars, A&D, 2025. Inferred from values (A&D + HN + ESRD = total); same in every row."
+Assignable__AG4,raw,"National reference total: national assignable paid dollars, A&D, 2026 (2026 = Jan–May). Inferred from values (A&D + HN + ESRD = total); same in every row."
+Assignable__AH4,raw,"National reference total: national assignable paid dollars, High Needs, 2023 — not available, 0."
+Assignable__AI4,raw,"National reference total: national assignable paid dollars, High Needs, 2024. Inferred from values (A&D + HN + ESRD = total); same in every row."
+Assignable__AJ4,raw,"National reference total: national assignable paid dollars, High Needs, 2025. Inferred from values (A&D + HN + ESRD = total); same in every row."
+Assignable__AK4,raw,"National reference total: national assignable paid dollars, High Needs, 2026 (2026 = Jan–May). Inferred from values (A&D + HN + ESRD = total); same in every row."
+Assignable__AL4,raw,"National reference total: national assignable paid dollars, ESRD, 2023 — not available, 0."
+Assignable__AM4,raw,"National reference total: national assignable paid dollars, ESRD, 2024. Inferred from values (A&D + HN + ESRD = total); same in every row."
+Assignable__AN4,raw,"National reference total: national assignable paid dollars, ESRD, 2025. Inferred from values (A&D + HN + ESRD = total); same in every row."
+Assignable__AO4,raw,"National reference total: national assignable paid dollars, ESRD, 2026 (2026 = Jan–May). Inferred from values (A&D + HN + ESRD = total); same in every row."
+Assignable__AP4,raw,"National reference total: national risk numerator (risk × member months), A&D, 2023 — not available, 0."
+Assignable__AQ4,raw,"National reference total: national risk numerator (risk × member months), A&D, 2024. Inferred from values (A&D + HN + ESRD = total); same in every row."
+Assignable__AR4,raw,"National reference total: national risk numerator (risk × member months), A&D, 2025. Inferred from values (A&D + HN + ESRD = total); same in every row."
+Assignable__AS4,raw,"National reference total: national risk numerator (risk × member months), A&D, 2026 (2026 = Jan–May). Inferred from values (A&D + HN + ESRD = total); same in every row."
+Assignable__AT4,raw,"National reference total: national risk numerator, High Needs, 2023 — not available, 0."
+Assignable__AU4,raw,"National reference total: national risk numerator, High Needs, 2024. Inferred from values (A&D + HN + ESRD = total); same in every row."
+Assignable__AV4,raw,"National reference total: national risk numerator, High Needs, 2025. Inferred from values (A&D + HN + ESRD = total); same in every row."
+Assignable__AW4,raw,"National reference total: national risk numerator, High Needs, 2026 (2026 = Jan–May). Inferred from values (A&D + HN + ESRD = total); same in every row."
+Assignable__AX4,raw,"National reference total: national risk numerator, ESRD, 2023 — not available, 0."
+Assignable__AY4,raw,"National reference total: national risk numerator, ESRD, 2024. Inferred from values (A&D + HN + ESRD = total); same in every row."
+Assignable__AZ4,raw,"National reference total: national risk numerator, ESRD, 2025. Inferred from values (A&D + HN + ESRD = total); same in every row."
+Assignable__BA4,raw,"National reference total: national risk numerator, ESRD, 2026 (2026 = Jan–May). Inferred from values (A&D + HN + ESRD = total); same in every row."
+Assignable__BN4,raw,"County-assigned beneficiaries 2026, A&D cohort (same values as PROSP_COUNTY row 3)."
+Assignable__BO4,raw,"County-assigned beneficiaries 2026, High Needs cohort (same values as PROSP_COUNTY row 3)."
+Assignable__BP4,raw,"County-assigned beneficiaries 2026, ESRD cohort (same values as PROSP_COUNTY row 3)."
+Assignable__BQ4,duplicate,Same as 'National blend weight | AD | <year>' (the TIN's share of its regional assignable population; identical for all years).
+Assignable__BR4,duplicate,Same as 'National blend weight | HN | <year>' (the TIN's share of its regional assignable population; identical for all years).
+Assignable__BS4,duplicate,Same as 'National blend weight | ESRD | <year>' (the TIN's share of its regional assignable population; identical for all years).
+Assignable__BB2,raw,"Regional risk-standardized expenditure PBPM, AD, 2023 (2023 not available: 0)."
+Assignable__BC2,duplicate,"Regional risk-standardized expenditure PBPM, AD, 2024 (same as 'Regional risk-standardized expenditure PBPM | AD | 2024')."
+Assignable__BD2,duplicate,"Regional risk-standardized expenditure PBPM, AD, 2025 (same as 'Regional risk-standardized expenditure PBPM | AD | 2025')."
+Assignable__BE2,duplicate,"Regional risk-standardized expenditure PBPM, AD, 2026 (same as 'Regional risk-standardized expenditure PBPM | AD | 2026')."
+Assignable__BF2,raw,"Regional risk-standardized expenditure PBPM, HN, 2023 (2023 not available: 0)."
+Assignable__BG2,duplicate,"Regional risk-standardized expenditure PBPM, HN, 2024 (same as 'Regional risk-standardized expenditure PBPM | HN | 2024')."
+Assignable__BH2,duplicate,"Regional risk-standardized expenditure PBPM, HN, 2025 (same as 'Regional risk-standardized expenditure PBPM | HN | 2025')."
+Assignable__BI2,duplicate,"Regional risk-standardized expenditure PBPM, HN, 2026 (same as 'Regional risk-standardized expenditure PBPM | HN | 2026')."
+Assignable__BJ2,raw,"Regional risk-standardized expenditure PBPM, ESRD, 2023 (2023 not available: 0)."
+Assignable__BK2,duplicate,"Regional risk-standardized expenditure PBPM, ESRD, 2024 (same as 'Regional risk-standardized expenditure PBPM | ESRD | 2024')."
+Assignable__BL2,duplicate,"Regional risk-standardized expenditure PBPM, ESRD, 2025 (same as 'Regional risk-standardized expenditure PBPM | ESRD | 2025')."
+Assignable__BM2,duplicate,"Regional risk-standardized expenditure PBPM, ESRD, 2026 (same as 'Regional risk-standardized expenditure PBPM | ESRD | 2026')."
+PQEM__B3,raw,"REACH primary-care capitation reference data (national constant, same in every row): beneficiaries 2025, A&D cohort. Cohort order inferred from values. Prefer the named 'Fixed workbook PQEM | …' columns."
+PQEM__C3,raw,"REACH primary-care capitation reference data (national constant, same in every row): beneficiaries 2025, ESRD cohort. Cohort order inferred from values. Prefer the named 'Fixed workbook PQEM | …' columns."
+PQEM__D3,raw,"REACH primary-care capitation reference data (national constant, same in every row): beneficiaries 2025, High Needs cohort. Cohort order inferred from values. Prefer the named 'Fixed workbook PQEM | …' columns."
+PQEM__E3,raw,"REACH primary-care capitation reference data (national constant, same in every row): beneficiaries 2026 (Jan–May), A&D cohort. Cohort order inferred from values. Prefer the named 'Fixed workbook PQEM | …' columns."
+PQEM__F3,raw,"REACH primary-care capitation reference data (national constant, same in every row): beneficiaries 2026 (Jan–May), ESRD cohort. Cohort order inferred from values. Prefer the named 'Fixed workbook PQEM | …' columns."
+PQEM__G3,raw,"REACH primary-care capitation reference data (national constant, same in every row): beneficiaries 2026 (Jan–May), High Needs cohort. Cohort order inferred from values. Prefer the named 'Fixed workbook PQEM | …' columns."
+PQEM__H3,raw,"REACH primary-care capitation reference data (national constant, same in every row): member months 2025, A&D cohort. Cohort order inferred from values. Prefer the named 'Fixed workbook PQEM | …' columns."
+PQEM__I3,raw,"REACH primary-care capitation reference data (national constant, same in every row): member months 2025, ESRD cohort. Cohort order inferred from values. Prefer the named 'Fixed workbook PQEM | …' columns."
+PQEM__J3,raw,"REACH primary-care capitation reference data (national constant, same in every row): member months 2025, High Needs cohort. Cohort order inferred from values. Prefer the named 'Fixed workbook PQEM | …' columns."
+PQEM__K3,raw,"REACH primary-care capitation reference data (national constant, same in every row): member months 2026 (Jan–May), A&D cohort. Cohort order inferred from values. Prefer the named 'Fixed workbook PQEM | …' columns."
+PQEM__L3,raw,"REACH primary-care capitation reference data (national constant, same in every row): member months 2026 (Jan–May), ESRD cohort. Cohort order inferred from values. Prefer the named 'Fixed workbook PQEM | …' columns."
+PQEM__M3,raw,"REACH primary-care capitation reference data (national constant, same in every row): member months 2026 (Jan–May), High Needs cohort. Cohort order inferred from values. Prefer the named 'Fixed workbook PQEM | …' columns."
+PQEM__N3,raw,"REACH primary-care capitation reference data (national constant, same in every row): REACH total paid $ 2025 (sum = 'Fixed workbook PQEM | REACH total paid | 2025'), A&D cohort. Cohort order inferred from values. Prefer the named 'Fixed workbook PQEM | …' columns."
+PQEM__O3,raw,"REACH primary-care capitation reference data (national constant, same in every row): REACH total paid $ 2025 (sum = 'Fixed workbook PQEM | REACH total paid | 2025'), ESRD cohort. Cohort order inferred from values. Prefer the named 'Fixed workbook PQEM | …' columns."
+PQEM__P3,raw,"REACH primary-care capitation reference data (national constant, same in every row): REACH total paid $ 2025 (sum = 'Fixed workbook PQEM | REACH total paid | 2025'), High Needs cohort. Cohort order inferred from values. Prefer the named 'Fixed workbook PQEM | …' columns."
+PQEM__Q3,raw,"REACH primary-care capitation reference data (national constant, same in every row): REACH total paid $ 2026 Jan–May (sum × 2.4 × 1.0612 = the 2026 annualized total), A&D cohort. Cohort order inferred from values. Prefer the named 'Fixed workbook PQEM | …' columns."
+PQEM__R3,raw,"REACH primary-care capitation reference data (national constant, same in every row): REACH total paid $ 2026 Jan–May (sum × 2.4 × 1.0612 = the 2026 annualized total), ESRD cohort. Cohort order inferred from values. Prefer the named 'Fixed workbook PQEM | …' columns."
+PQEM__S3,raw,"REACH primary-care capitation reference data (national constant, same in every row): REACH total paid $ 2026 Jan–May (sum × 2.4 × 1.0612 = the 2026 annualized total), High Needs cohort. Cohort order inferred from values. Prefer the named 'Fixed workbook PQEM | …' columns."
+PQEM__T3,raw,"REACH primary-care capitation reference data (national constant, same in every row): PCC paid PQEM $ 2025 (sum = 'Fixed workbook PQEM | PCC paid PQEM | 2025'), A&D cohort. Cohort order inferred from values. Prefer the named 'Fixed workbook PQEM | …' columns."
+PQEM__U3,raw,"REACH primary-care capitation reference data (national constant, same in every row): PCC paid PQEM $ 2025 (sum = 'Fixed workbook PQEM | PCC paid PQEM | 2025'), ESRD cohort. Cohort order inferred from values. Prefer the named 'Fixed workbook PQEM | …' columns."
+PQEM__V3,raw,"REACH primary-care capitation reference data (national constant, same in every row): PCC paid PQEM $ 2025 (sum = 'Fixed workbook PQEM | PCC paid PQEM | 2025'), High Needs cohort. Cohort order inferred from values. Prefer the named 'Fixed workbook PQEM | …' columns."
+PQEM__W3,raw,"REACH primary-care capitation reference data (national constant, same in every row): PCC paid PQEM $ 2026 Jan–May, A&D cohort. Cohort order inferred from values. Prefer the named 'Fixed workbook PQEM | …' columns."
+PQEM__X3,raw,"REACH primary-care capitation reference data (national constant, same in every row): PCC paid PQEM $ 2026 Jan–May, ESRD cohort. Cohort order inferred from values. Prefer the named 'Fixed workbook PQEM | …' columns."
+PQEM__Y3,raw,"REACH primary-care capitation reference data (national constant, same in every row): PCC paid PQEM $ 2026 Jan–May, High Needs cohort. Cohort order inferred from values. Prefer the named 'Fixed workbook PQEM | …' columns."
+PQEM__Z3,raw,"REACH primary-care capitation reference data (national constant, same in every row): paid $ 2025, category not documented, A&D cohort. Cohort order inferred from values. Prefer the named 'Fixed workbook PQEM | …' columns."
+PQEM__AA3,raw,"REACH primary-care capitation reference data (national constant, same in every row): paid $ 2025, category not documented, ESRD cohort. Cohort order inferred from values. Prefer the named 'Fixed workbook PQEM | …' columns."
+PQEM__AB3,raw,"REACH primary-care capitation reference data (national constant, same in every row): paid $ 2025, category not documented, High Needs cohort. Cohort order inferred from values. Prefer the named 'Fixed workbook PQEM | …' columns."
+PQEM__AC3,raw,"REACH primary-care capitation reference data (national constant, same in every row): paid $ 2026 Jan–May, category not documented, A&D cohort. Cohort order inferred from values. Prefer the named 'Fixed workbook PQEM | …' columns."
+PQEM__AD3,raw,"REACH primary-care capitation reference data (national constant, same in every row): paid $ 2026 Jan–May, category not documented, ESRD cohort. Cohort order inferred from values. Prefer the named 'Fixed workbook PQEM | …' columns."
+PQEM__AE3,raw,"REACH primary-care capitation reference data (national constant, same in every row): paid $ 2026 Jan–May, category not documented, High Needs cohort. Cohort order inferred from values. Prefer the named 'Fixed workbook PQEM | …' columns."
+PQEM__AF3,raw,"REACH primary-care capitation reference data (national constant, same in every row): TCC paid $ 2025 (sum = 'Fixed workbook PQEM | TCC paid | 2025'), A&D cohort. Cohort order inferred from values. Prefer the named 'Fixed workbook PQEM | …' columns."
+PQEM__AG3,raw,"REACH primary-care capitation reference data (national constant, same in every row): TCC paid $ 2025 (sum = 'Fixed workbook PQEM | TCC paid | 2025'), ESRD cohort. Cohort order inferred from values. Prefer the named 'Fixed workbook PQEM | …' columns."
+PQEM__AH3,raw,"REACH primary-care capitation reference data (national constant, same in every row): TCC paid $ 2025 (sum = 'Fixed workbook PQEM | TCC paid | 2025'), High Needs cohort. Cohort order inferred from values. Prefer the named 'Fixed workbook PQEM | …' columns."
+PQEM__AI3,raw,"REACH primary-care capitation reference data (national constant, same in every row): TCC paid $ 2026 Jan–May, A&D cohort. Cohort order inferred from values. Prefer the named 'Fixed workbook PQEM | …' columns."
+PQEM__AJ3,raw,"REACH primary-care capitation reference data (national constant, same in every row): TCC paid $ 2026 Jan–May, ESRD cohort. Cohort order inferred from values. Prefer the named 'Fixed workbook PQEM | …' columns."
+PQEM__AK3,raw,"REACH primary-care capitation reference data (national constant, same in every row): TCC paid $ 2026 Jan–May, High Needs cohort. Cohort order inferred from values. Prefer the named 'Fixed workbook PQEM | …' columns."
+PQEM__AL3,raw,"REACH primary-care capitation reference data (national constant, same in every row): paid $ 2025, category not documented, A&D cohort. Cohort order inferred from values. Prefer the named 'Fixed workbook PQEM | …' columns."
+PQEM__AM3,raw,"REACH primary-care capitation reference data (national constant, same in every row): paid $ 2025, category not documented, ESRD cohort. Cohort order inferred from values. Prefer the named 'Fixed workbook PQEM | …' columns."
+PQEM__AN3,raw,"REACH primary-care capitation reference data (national constant, same in every row): paid $ 2025, category not documented, High Needs cohort. Cohort order inferred from values. Prefer the named 'Fixed workbook PQEM | …' columns."
+PQEM__AO3,raw,"REACH primary-care capitation reference data (national constant, same in every row): paid $ 2026 Jan–May, category not documented, A&D cohort. Cohort order inferred from values. Prefer the named 'Fixed workbook PQEM | …' columns."
+PQEM__AP3,raw,"REACH primary-care capitation reference data (national constant, same in every row): paid $ 2026 Jan–May, category not documented, ESRD cohort. Cohort order inferred from values. Prefer the named 'Fixed workbook PQEM | …' columns."
+PQEM__AQ3,raw,"REACH primary-care capitation reference data (national constant, same in every row): paid $ 2026 Jan–May, category not documented, High Needs cohort. Cohort order inferred from values. Prefer the named 'Fixed workbook PQEM | …' columns."
+PQEM__T1,raw,Ratio from the PQEM reference sheet (constant); meaning not documented in the extract. Prefer 'Fixed workbook PQEM | Base PCC fraction | …'.
+PQEM__U1,raw,Ratio from the PQEM reference sheet (constant); meaning not documented in the extract. Prefer 'Fixed workbook PQEM | Base PCC fraction | …'.
+PQEM__V1,raw,Ratio from the PQEM reference sheet (constant); meaning not documented in the extract. Prefer 'Fixed workbook PQEM | Base PCC fraction | …'.
+Benchmark discount,parameter,"The discount RATE applied to this TIN's benchmark (0.03 for Low Spending, 0.0175 for High Spending), not a dollar or PBPM amount. 'Benchmark PBPM after discount' = 'Benchmark PBPM before discount' × (1 − this rate)."
+Administrative add-on,metric,Total DOLLARS (not PBPM): 1.5% × 'Benchmark PBPM before discount' × person years × 12 for High Spending TINs; 0 for Low Spending. Paid separately from the benchmark.
+Settlement | total monies owed,metric,"Net settlement in dollars: shared savings/losses + sequestration + enhanced PCC repayment (+ APO and high-performers items, both 0 here). POSITIVE = CMS pays the ACO; NEGATIVE = the ACO owes CMS (often because the enhanced PCC advance exceeds shared savings)."
+Settlement | enhanced PCC repayment,metric,Negative dollars: repayment of the Enhanced PCC advance at settlement (≈ −Σ 'Enhanced PCC amount | cohort').
+Settlement | sequestration,metric,Negative dollars: 2% of the absolute shared savings/losses amount.
+Settlement | shared savings or losses,metric,Shared savings (+) or losses (−) in dollars after the Global risk corridors. Identical to 'Retained savings or losses after risk corridors'.
+Retained savings or losses after risk corridors,duplicate,Same as 'Settlement | shared savings or losses'.
+Gross margin / total savings before risk corridors,metric,"Total dollars: 'Total benchmark' − 'Total projected expenditures'. Positive = savings, negative = losses. This is the headline pre-sharing result."
+Total benchmark,metric,Total dollars = 'Benchmark PBPM after discount and earned quality' × 'Person years after exposure adjustment' × 12.
+Total projected expenditures,metric,Total dollars = 'Projected expense PBPM' × 'Person years after exposure adjustment' × 12.
+Spending classification,duplicate,Same as 'ACO spending classification'.
+"Quality score [Expense, benchmark and margin]",duplicate,Same as 'Quality score [Model settings]' (1 = full quality withhold earned back).
+Financial guarantee | guarantee fraction,duplicate,Same as 'Financial guarantee fraction' (0.04).
+Financial guarantee | annualized BY3 cost,metric,Σ over cohorts of 'Claim payments | cohort | BY3 2026' × 2.4 (Jan–May 2026 paid annualized). The guarantee is 4% of this.
+Financial guarantee amount,metric,Dollars = 4% × 'Financial guarantee | annualized BY3 cost'.
+Claim payments | AD | BY1 2024,metric,Dollars (not annualized) = 'Expenditure PBPM | AD | BY1 2024' × 'Eligible member months | AD | BY1 2024'. Same construction for every cohort and base year; BY3 2026 covers Jan–May only.
+Benchmark PBPM before discount,metric,Σ over cohorts of 'Cohort share | cohort | PY2027' × 'Updated benchmark PBPM | cohort | PY2027'. Identical to 'Total updated benchmark PBPM before discount and quality'.
+Total updated benchmark PBPM before discount and quality,duplicate,Same as 'Benchmark PBPM before discount'.
+Benchmark PBPM after discount and earned quality,metric,The final PY2027 benchmark PBPM used for savings. Equals 'Benchmark PBPM after discount' here because the quality score is 1 (the whole 3% withhold is earned back).
+Quality withhold PBPM,metric,3% × 'Benchmark PBPM after discount'. Equals 'Earned quality withhold PBPM' because the quality score is 1.
+Earned quality withhold PBPM,duplicate,Same as 'Quality withhold PBPM' (quality score = 1).
+Benchmark PBPM after discount,duplicate,Same as 'Benchmark PBPM after discount and earned quality' in this file (quality score = 1).
+Pre-sharing MLR = expense / benchmark,metric,'Projected expense PBPM' ÷ 'Benchmark PBPM after discount and earned quality' (= expense $ ÷ benchmark $). Medical-loss-ratio style figure; below 1 means savings.
+Post-sharing MLR = 1 − retained savings / benchmark,metric,1 − 'Settlement | shared savings or losses' ÷ 'Total benchmark'.
+Assigned beneficiaries,metric,PY2027 aligned beneficiaries used for person years (= '2027 aligned beneficiaries' where supplied). 'Person years after exposure adjustment' = this × 'Exposure retention factor … | Average'.
+2027 aligned beneficiaries,metric,Supplied PY2027 alignment count (blank for 223 TINs where the model projected it instead; see '2027 beneficiary projection basis').
+BY3 aligned beneficiaries (2026 eligibility count),duplicate,Same as 'Total cohort beneficiaries | 2026'.
+Total cohort beneficiaries | 2026,metric,2026 (BY3) beneficiaries across AD + HN + ESRD; the '200plus' file filter applies to this count.
+Person years after exposure adjustment,metric,PY2027 person years = 'Assigned beneficiaries' × 'Exposure retention factor (workbook label: Churn Rate) | Average'. The denominator for all PBPM → dollar conversions (× 12).
+Exposure retention factor (workbook label: Churn Rate) | Average,metric,"Share of the year an aligned beneficiary stays exposed (0.66–1.0, median 0.97). The workbook calls it 'Churn Rate' but it is a RETENTION factor, higher = less churn."
+Cohort share | AD | PY2027,metric,'Person years by cohort | AD | PY2027' ÷ 'Person years after exposure adjustment' (same construction for HN and ESRD). Near-identical to 'Cohort allocation weight' and 'Cohort allocation share'.
+Beneficiary category weight | AD | BY3 2026,metric,"'Beneficiaries | AD | 2026' ÷ 'Total cohort beneficiaries | 2026' (2026 mix, used to weight the BY3 benchmark); the PY2027 mix is 'Cohort share | AD | PY2027'."
+Regional adjustment weight,parameter,"0.5 for Low Spending TINs (regional adjustment applies), 0 for High Spending TINs."
+Selected ACO-specific adjustment type,metric,"'Regional' for Low Spending TINs, 'Prior Savings' for High Spending TINs (whose prior-savings adjustment is 0 because no TIN is eligible)."
+ACO-specific benchmark adjustment | AD | Adjustment,duplicate,Same as 'Regional adjustment after cap | AD | BY3' (also for HN and ESRD).
+Adjusted historical benchmark PBPM | AD | Adjusted,duplicate,Same as 'Adjusted historical benchmark PBPM | AD | BY3' (also for HN and ESRD).
+Net cost PMPM [2024 AD],metric,"'Reach PMPM' − 'SAHS PMPM' − 0.65 × 'Skin PMPM' for the same year/cohort (SAHS 100% excluded, skin substitutes 65% excluded). Same construction for every year and cohort."
+Reach PMPM [2024 AD],metric,"Source paid PMPM from the REACH claims extract for the year/cohort, before SAHS and skin-substitute exclusions."
+Treated Reach PMPM [2024 AD],metric,Reach PMPM after the blank / −11 member-month and blank-dollar treatments; in 2026 equals 'Net cost PMPM'.
+Blank member months,parameter,Imputation rule: source member months that are blank are replaced with 3.
+Member months = -11,parameter,Imputation rule: source member months coded −11 (CMS small-cell suppression) are replaced with 8.
+Blank dollars,parameter,Imputation rule: blank source dollar amounts are treated as 0.
+Full-year denominator,parameter,12 months — divisor used to convert annual amounts to PBPM.
+2026 exposure months,parameter,5 — months of 2026 claims available (Jan–May).
+BY3 annualization factor (12/5),parameter,2.4 — multiplies Jan–May 2026 amounts to a full year.
+Skin exclusion factor,parameter,0.65 — share of skin-substitute spending excluded from benchmark and expense.
+Minimum beneficiary equivalent threshold for base-year inclusion,parameter,A base year is used only if the TIN had at least 10 beneficiaries in it (see 'Base year eligible | BYn' and 'Number of eligible base years').
+Input notes,metric,"Source caveats per TIN, e.g. 'Organization-level NPI data also map to selection keys …: do not add these rows as independent populations' — the TINs listed share one NPI population."
+National expense trend | ESRD | Average / 2026–2027,duplicate,Same as 'National expense trend | ESRD | 2026–2027' (label artifact). Likewise for HN and AD.
+Regional expense trend | AD | Average / 2026–2027,duplicate,Same as 'Regional trend factor | AD | 2027' (label artifact).
+Applied risk trend | ESRD | 2025–2026,parameter,'-' = not applicable under prospective alignment (risk trend is applied only to HN: 1.04).
+Cumulative corridor dollar threshold | Corridor 1,metric,Dollar edge of each Global corridor band: 15% / 35% / 50% / 100% of 'Total benchmark'.
+Gross savings or losses in corridor | Corridor 1,metric,"Portion of the gross margin falling in each corridor band (dollars, signed). 'Retained … in corridor' = this × the band's sharing fraction (100% / 50% / 25% / 10%)."
+Cohort revenue before discount | AD,metric,"Dollars = 'Updated benchmark PBPM | AD | PY2027' × 'Person years by cohort | AD | PY2027' × 12; base for the PCC amounts (same for HN, ESRD)."
+PCC capitation amount | AD,metric,Dollars = Base PCC fraction (3.164%) × 'Cohort revenue before discount | AD'.
+Enhanced PCC amount | AD,metric,Dollars = Enhanced PCC fraction (3.836%) × 'Cohort revenue before discount | AD'; repaid at settlement.
+BY3 national expenditure PBPM weighted by beneficiary categories and capped risk,metric,National reference PBPM for the TIN's 2026 cohort mix and capped risk; used for the regional/discount caps.
+Weighted regional-minus-ACO difference,metric,"PBPM dollars: regional risk-standardized expenditure minus the TIN's historical benchmark, weighted across cohorts (positive = TIN is cheaper than its region → Low Spending)."
+Relative regional-minus-ACO difference,metric,'Weighted regional-minus-ACO difference' as a fraction of the regional PBPM.
+^BY3 renormalized risk \| (AD|HN|ESRD) \|$,duplicate,Same as 'Renormalized average risk | <cohort> | BY3 2026' (the empty last segment is a label artifact).
+^Final capped PY risk score \| (AD|HN|ESRD) \|$,duplicate,Same as 'Capped PY risk score | <cohort> | PY2027'.
+^Displayed risk growth cap \| (AD|HN|ESRD) \|$,parameter,"The risk-growth cap shown for the cohort (1.03 for AD/ESRD, 1.04 for HN)."
+^Uncapped (PY/BY3 risk ratio|projected PY renormalized risk) \| (AD|HN|ESRD) \|$,metric,PY2027 risk relative to BY3 before the 3%/4% cap (the empty last segment is a label artifact).
+^Churn calculation \| beneficiaries \| (AD|HN|ESRD|Total) \| 20\d\d$,duplicate,Same as 'Beneficiaries | <cohort> | <year>' / 'Total cohort beneficiaries | <year>'.
+^Churn calculation \| member months \| (AD|HN|ESRD) \| 20\d\d$,duplicate,Same as 'Eligible member months | <cohort> | BYn <year>'.
+^Expenditure PBPM \| (AD|HN|ESRD) \| BY[12] 20\d\d$,duplicate,Same as 'Assigned expenditure PBPM | <cohort> | <year>'; BY3 2026 equals 'Assigned expenditure PBPM | <cohort> | 2026 blended'.
+^Benchmark update trend \| (AD|HN|ESRD) \| Applied PY trend$,duplicate,Same as 'Benchmark update trend | <cohort> | Three-way blended trend after guardrail' — the factor actually applied to reach PY2027.
+^Benchmark update trend \| (AD|HN|ESRD) \| Two-way blended trend$,duplicate,Same as 'National-regional blended trend factor | <cohort> | 2027'.
+^(National|Regional) blend weight \| (AD|HN|ESRD) \| 20\d\d$,metric,Weight on the national (resp. regional) trend = the TIN's share of its regional assignable population (tiny for a single TIN) — identical for every year.
+^(Assigned expenditure PBPM|Risk renormalization factor|Assigned raw risk score|Beneficiaries|National (expenditure PBPM|risk score)) \| (AD|HN|ESRD) \| 2023$,label,2023 is not a base year: placeholder 0.
+^Beneficiary status \[20\d\d (AD|HN|ESRD)\]$,metric,"Source-data status for the year/cohort: Observed, 'Imputed from treated member months', or 'No source record' (use to exclude imputed TINs)."

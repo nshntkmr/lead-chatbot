@@ -1,0 +1,17 @@
+.env
+.secret_key
+app.db
+data/warehouse.duckdb
+data/*.building
+__pycache__/
+.venv/
+
+# Source data stays out of git (122 MB / 302 MB — over GitHub's 100 MB file limit).
+# Copy the CSV / Excel files into data\ on each machine instead.
+data/*.csv
+data/*.xlsx
+data/*.xls
+# ...except the small files the app's answers depend on.
+!data/column_notes*.csv
+!data/*Dictionary*.csv
+!data/pricing.json
