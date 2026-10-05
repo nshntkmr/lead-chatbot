@@ -1,0 +1,14 @@
+# SSH server for the Azure App Service console (see docker/entrypoint.sh). Settings follow Microsoft's
+# "Enable SSH" guidance for custom Linux containers: port 2222, root login with the fixed password.
+Port                    2222
+ListenAddress           0.0.0.0
+LoginGraceTime          180
+StrictModes             yes
+SyslogFacility          DAEMON
+PasswordAuthentication  yes
+PermitEmptyPasswords    no
+PermitRootLogin         yes
+X11Forwarding           no
+Ciphers                 aes128-ctr,aes192-ctr,aes256-ctr
+MACs                    hmac-sha2-256,hmac-sha2-512,hmac-sha1
+Subsystem               sftp internal-sftp

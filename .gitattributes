@@ -1,0 +1,3 @@
+# Files that run inside the Linux container must keep LF endings, whatever the checkout machine uses.
+*.sh            text eol=lf
+docker/*        text eol=lf

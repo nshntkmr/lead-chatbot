@@ -65,6 +65,8 @@ python -m scripts.manage_users remove <username>
 python -m scripts.manage_users list
 ```
 
+Each copy of the app has its own `app.db`, so a user added on your machine does not exist on Azure and vice versa. **On Azure App Service**, run the same commands inside the running container: in the Azure portal open the web app → *Development Tools* → *SSH* → *Go*, and type the command at the prompt (it opens in `/app` with the app's settings loaded, so it acts on the live database; no restart is needed). The image carries an SSH server for this on port 2222, which App Service reaches internally after Azure sign-in; do not publish that port if you run the image elsewhere.
+
 Passwords are stored as bcrypt hashes in `app.db`. Sessions are signed httpOnly cookies that last 12 hours by default. After 8 failed sign-ins, an IP address is locked out for 15 minutes; the count is kept in `app.db`, so it is shared by every worker process and survives a restart. Behind a reverse proxy set `TRUSTED_PROXY_HOPS` (see Deploying), otherwise all users share the proxy's address and one person's typos lock everyone out. Each user only sees their own chat history.
 
 ## Updating the data
