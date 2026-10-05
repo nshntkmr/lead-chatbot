@@ -53,6 +53,19 @@ def portfolio(*sizes: int) -> dict:
     return {"kind": "portfolio", "sizes": sizes, "label": f"saved portfolio has {' or '.join(map(str, sizes))} TINs"}
 
 
+def portfolio_is(tins: str | list[str]) -> dict:
+    """The saved portfolio is exactly these TINs (a count alone would pass a different set of the same size)."""
+    tins = [t for t in tins.replace(" and ", ",").replace(" ", "").split(",") if t] if isinstance(tins, str) else list(tins)
+    return {"kind": "portfolio_is", "tins": tins, "label": f"saved portfolio is exactly {', '.join(tins)}"}
+
+
+def reconciles(benchmark: float, expense: float, savings: float, tol: float = 1.0) -> dict:
+    """The exact benchmark, expense and savings are shown (to within `tol` dollars) and the figures shown satisfy
+    benchmark − expense = savings as displayed. Deterministic; complements the looser `usd` facts the judge reads."""
+    return {"kind": "reconciles", "benchmark": benchmark, "expense": expense, "savings": savings, "tol": tol,
+            "label": f"shows ${benchmark:,.2f} − ${expense:,.2f} = ${savings:,.2f} exactly, and they reconcile as displayed"}
+
+
 def target(v: float) -> dict:
     return {"kind": "target", "value": v, "label": f"saved target is {v:.0%}"}
 
@@ -125,6 +138,10 @@ CASES: list[Case] = [
              [pct(100.2, "combined MLR of the original five TINs with expense 3% higher"),
               usd(-329e3, "gross margin of the original five with expense 3% higher (negative: a loss)", rel=0.01),
               usd(-336e3, "net shared result of the original five with expense 3% higher (negative: a shared loss)", rel=0.01),
+              # computed changes against the base case, which the answer must not get the wrong way round
+              usd(-5_095_280, "change in gross margin against the base case (negative: it falls)", rel=0.001),
+              usd(-5_006_553, "change in projected net settlement against the base case (negative: more is owed to CMS; "
+                              "smaller in size than the fall in gross margin)", rel=0.001),
               portfolio(5, 7), target(0.85)]),
     ]),
     # Conditions beyond the suggestion filters: screened with SQL, then handed over as the candidate pool.
@@ -179,7 +196,7 @@ CASES: list[Case] = [
              [pct(96.1, "combined MLR of the three TINs"), usd(170.9e6, "combined gross savings of the three TINs"), portfolio(3)]),
         Turn("What if their costs come in 2% higher than projected?",
              [pct(98.0, "combined MLR with expenses 2% higher"), usd(86.2e6, "gross savings with expenses 2% higher"),
-              portfolio(3)]),
+              portfolio_is(["340714585", "363738206", "941156581"])]),
         Turn("Forget the 2% scenario. Take Sutter Bay out of my portfolio: what's the combined MLR of the remaining two?",
              [pct(97.7, "base-case combined MLR of Cleveland Clinic and Endeavor Health"), portfolio(2)]),
     ]),
@@ -305,7 +322,32 @@ CASES: list[Case] = [
         has("MSSP"), has(r"(?i)new chat|MSSP (chat|dataset|data)|switch|start"), lacks(r"\b435\b")),
     one("C3", "LEAD", "Which TINs are in Texas?",
         has(r"(?i)state|county|geograph|location|address"), has(r"(?i)\bname")),
+    # A what-if on a model parameter is answered as a limited sensitivity when the workbook's formula and inputs are
+    # in the data. Expected values: pandas on the raw CSV, benchmark × 0.98 ÷ 0.97 on the 3%-discount rows, expense fixed.
     one("C4", "LEAD", "What if the discount were 2% instead of 3%?",
-        has(r"(?i)can.t|cannot|not able|unable|not possible|isn.t possible|does not|doesn.t|re-?run|re-?comput"),
-        has(r"(?i)stress|expense|benchmark")),
+        usd(211_919_426_723, "benchmark of the Low Spending (3%-discount) TINs at a 2% discount", rel=0.0005),
+        pct(93.2, "combined MLR of the Low Spending TINs at a 2% discount"),
+        usd(14_484_662_249, "gross savings of the Low Spending TINs at a 2% discount", rel=0.0005),
+        usd(197_434_764_475, "projected expense of the Low Spending TINs (unchanged in the scenario)", rel=0.0005),
+        reconciles(211_919_426_723.16, 197_434_764_474.57, 14_484_662_248.59),
+        has(r"(?i)7,?422|Low Spending"),                                           # scope
+        has(r"(?i)sensitivity|what-if|not a (full )?(model )?re-?run|hold|held|unchanged|stays? the same"),   # assumptions
+        has(r"(?i)(not|n't|without) (re-?calculat|re-?comput|re-?model|re-?deriv|model|includ)|held at|stay"),  # downstream limits
+        lacks(r"(?i)projected net settlement (would be|is|of|becomes|rises to|falls to) [−-]?\$")),
+    Case("C4b", "LEAD", [
+        Turn(f"I have TINs {LEAD_FIVE}.", [portfolio_is(LEAD_FIVE)]),
+        Turn("What if the discount were 2% instead of 3% for my portfolio?",
+             [usd(176_408_549, "portfolio benchmark at a 2% discount", rel=0.0005),
+              pct(96.3, "portfolio combined MLR at a 2% discount"),
+              usd(6_565_890, "portfolio gross savings at a 2% discount", rel=0.001),
+              reconciles(176_408_549.14, 169_842_658.80, 6_565_890.34),
+              has(r"(?i)sensitivity|what-if|not a (full )?(model )?re-?run|hold|held|unchanged|stays? the same"),
+              portfolio_is(LEAD_FIVE)]),
+        Turn("What is my combined MLR?", [pct(97.3, "base-case combined MLR of the saved five-TIN portfolio"),
+                                          portfolio_is(LEAD_FIVE)]),
+    ]),
+    one("C5", "LEAD", "What would my benchmarks be if risk scores were recalculated under the V24 model instead of V28?",
+        has(r"(?i)can.t|cannot|not able|unable|not possible|isn.t possible|does not|doesn.t|not (in|available|included)|would need|missing"),
+        has(r"(?i)diagnos|HCC|coefficient|claims-level|beneficiary-level|risk score"),
+        lacks(r"(?i)benchmark would (be|rise to|fall to|increase to|decrease to) \$")),
 ]

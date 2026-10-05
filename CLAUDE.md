@@ -42,7 +42,8 @@ Login-protected chat app where actuaries / finance leaders ask Claude questions 
 .venv\Scripts\python -m scripts.manage_users add <user> --admin
 .venv\Scripts\python -m scripts.rebuild_data
 .venv\Scripts\python -m evals.run --offline                 # deterministic checks, free, under a minute
-.venv\Scripts\python -m evals.run                           # + all chat cases against the model (~$1.60, ~4 min)
+.venv\Scripts\python -m evals.run                           # + all chat cases against the model (~$6, ~8 min)
+.venv\Scripts\python -m evals.run --only A3,A4-A7 --repeat 3  # the same cases several times: answers vary run to run
 ```
 
 After any change to `portfolio.py`, `agent.py`, `data.py`, `main.py`, `store.py` or `data/context*.md`, run `python -m evals.run` (at least `--offline`); a failing case names the check and the report in `evals/results/` holds the full answer. A figure passes only when it is shown with the right sign and the judge agrees it is stated for that metric; `--no-judge` is for a quick look and proves nothing about correctness. Read the "judge observations" at the end of a run: they do not fail a case but are where prose slips show up. Add a case to `evals/cases.py` for every new behaviour or bug fix, and update expected values only if the raw CSV says so. `TESTING.md` remains the manual script for the UI checks (Part C).

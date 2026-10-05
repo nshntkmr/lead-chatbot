@@ -670,7 +670,9 @@ def _clean(v):
     if isinstance(v, float):
         if math.isnan(v) or math.isinf(v):
             return None
-        return float(f"{v:.8g}")
+        # Compact, but never coarser than a cent: a sum in the billions keeps every dollar, so benchmark,
+        # expense and savings in one answer reconcile.
+        return round(v, 2) if abs(v) >= 1e6 else float(f"{v:.8g}")
     if isinstance(v, decimal.Decimal):
         return float(v)
     if isinstance(v, (dt.date, dt.datetime)):

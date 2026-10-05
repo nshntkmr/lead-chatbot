@@ -95,6 +95,26 @@ def grade(check: dict, text: str, nums: list[tuple[float, bool]], blocks: list[d
     if kind == "portfolio":
         n = len(state.get("portfolio") or [])
         return n in check["sizes"], f"has {n}"
+    if kind == "portfolio_is":
+        got = {str(t).lstrip("0") for t in state.get("portfolio") or []}
+        want_set = {str(t).lstrip("0") for t in check["tins"]}
+        extra, gone = sorted(got - want_set), sorted(want_set - got)
+        return got == want_set, "; ".join(x for x in (f"unexpected {', '.join(extra)}" if extra else "",
+                                                       f"missing {', '.join(gone)}" if gone else "") if x)
+    if kind == "reconciles":
+        # The exact figures must be on screen (to the dollar, so an abbreviated "$211.9 billion" does not count),
+        # and the three figures shown must satisfy benchmark − expense = savings at the precision displayed.
+        shown = {}
+        for key in ("benchmark", "expense", "savings"):
+            near = [v for v, _ in nums if abs(abs(v) - abs(check[key])) <= check["tol"]]
+            if not near:
+                closest = min((v for v, _ in nums), key=lambda v: abs(abs(v) - abs(check[key])), default=None)
+                return False, (f"{key} {check[key]:,.2f} is not shown to within ${check['tol']:g}"
+                               + (f" (closest {closest:,.2f})" if closest is not None else ""))
+            shown[key] = near
+        ok = any(abs(abs(b) - abs(e) - abs(s)) <= 0.011 for b in shown["benchmark"] for e in shown["expense"] for s in shown["savings"])
+        return ok, "" if ok else (f"shown figures do not reconcile: {shown['benchmark'][0]:,.2f} − {shown['expense'][0]:,.2f} "
+                                  f"≠ {shown['savings'][0]:,.2f}")
     if kind == "target":
         got = state.get("target_mlr")
         return got is not None and abs(got - check["value"]) < 1e-9, f"is {got}"
@@ -134,16 +154,27 @@ table or chart shows the expected value: the reader is told the wrong number.
 
 Then report two further lists.
 
-contradictions: only numeric ones. The reply gives two materially different numbers for the SAME metric of the \
-SAME entity on the SAME basis: prose against a table or chart, or one sentence against another. Quote both \
-numbers. These are not contradictions: rounding; a figure before and after sharing, corridors, caps or \
-sequestration when the reply distinguishes them; a what-if or stress-test figure beside a base-case figure; \
-figures for different TINs, cohorts, programs or years; a table sorted or limited differently from how the \
-prose describes it. When in doubt, it is not a contradiction.
+contradictions: statements that the reply's own figures show to be false. These FAIL the answer. Two kinds.
+(1) Numeric. The reply gives two materially different numbers for the SAME metric of the SAME entity on the \
+SAME basis: prose against a table or chart, one sentence against another, or one table row against rows the \
+reply says are identical. Quote both numbers.
+(2) A factual claim. A sentence that the tables, charts or numbers shown in the same reply prove false, and \
+that would mislead the reader: a direction or comparison ("each cohort is at or above benchmark" beside cohort \
+MLRs under 100%); "identical" or "the same" beside values that differ; a count that does not match the rows \
+shown; a false description of a table the user sees (said to be ranked by two measures when it shows one \
+ranking, said to be the complete list when its title says it shows part, said to contain an entity it does \
+not); or an answer that leaves the question unresolved between two different results when the question asked \
+about one thing the user was shown. Quote the claim and the figure that refutes it.
+These are not contradictions: rounding; approximate wording ("about 95–98%" when one of the values is 94.8%; \
+"roughly", "around"); a figure before and after sharing, corridors, caps or sequestration when the reply \
+distinguishes them; a what-if or stress-test figure beside a base-case figure; figures for different TINs, \
+cohorts, programs or years; a logically valid inference stated without its detail (two lists of different \
+length are different lists); a claim you merely cannot verify from the reply; a sentence with a reasonable reading that the \nfigures support ("none of these reaches 85%" about MLRs that are all above 85%, meaning none gets down to it). When in doubt, it is not a \
+contradiction.
 
-observations: anything else that looks WRONG to a careful reviewer (a count or description that does not \
-match a table row, a claim the figures shown contradict, a malformed number). These are recorded for a human \
-to read and do not fail the answer. Record problems only: never things you checked that turned out consistent, \
+observations: anything else a careful reviewer would want to look at that is not a contradiction as defined \
+above (an unlabeled population or basis, an odd-looking but possible figure, a footer that cites an unexpected \
+column). These are recorded for a human to read and do not fail the answer. Record problems only: never things you checked that turned out consistent, \
 and never that something cannot be verified from the reply. An empty list is the normal case for both."""
 
 GRADE_TOOL = {
@@ -255,6 +286,29 @@ JUDGE_SELFTESTS = [
      "answer": "By cohort: Aged & Disabled 91.6%, ESRD 101.7%. High Needs was not broken out.",
      "blocks": [], "checks": [_F_HN],
      "expect": {1: {"wrong", "missing"}}, "contradiction": False},
+    {"name": "rejects a claim its own table refutes (every cohort 'at or above benchmark', two shown under 100%)",
+     "ask": "Is there anything about this TIN's MLR I should be wary of?",
+     "answer": "Each cohort on its own is at or above benchmark:\n\n| Cohort | MLR |\n|---|---|\n| Aged & Disabled | 98.6% |\n"
+               "| High Needs | 98.4% |\n| ESRD | 112.5% |",
+     "blocks": [], "checks": [{"kind": "num", "value": 112.5, "tol": 0.1, "unit": "pct", "what": "ESRD cohort MLR"}],
+     "expect": {1: {"correct"}}, "contradiction": True},
+    {"name": "rejects a false description of the table shown (said to be ranked two ways and complete; it is neither)",
+     "ask": "Which TINs could I add?",
+     "answer": "Optum Care Washington is the largest addition, with a $1.2B benchmark. The table above is the full list of "
+               "candidates, ranked by benchmark and by margin.",
+     "blocks": [{"type": "table", "title": "Candidates with MLR ≤ 85% (largest 2 of 834 by benchmark)",
+                 "columns": ["TIN", "Organization", "Benchmark $", "Gross margin $"],
+                 "rows": [["910214500", "OPTUM CARE WASHINGTON PLLC", 1200000000, 290000000],
+                          ["271081647", "UNC PHYSICIANS NETWORK LLC", 900000000, 310000000]]}],
+     "checks": [{"kind": "num", "value": 1.2e9, "tol": 6e6, "unit": "usd", "what": "benchmark of Optum Care Washington"}],
+     "expect": {1: {"correct"}}, "contradiction": True},
+    {"name": "accepts approximate wording and a valid inference (about 95–98% with one row at 94.8%; 645 vs 618 lists differ)",
+     "ask": "Which TINs have the highest home-health utilization?",
+     "answer": "The top three have home-health rates of about 95–98%. On the 2026 count 618 TINs qualify instead of 645, "
+               "so the two lists aren't the same.\n\n| TIN | Home-health % |\n|---|---|\n| 992506226 | 97.8 |\n"
+               "| 863958395 | 95.9 |\n| 884183648 | 94.8 |",
+     "blocks": [], "checks": [{"kind": "num", "value": 97.8, "tol": 0.1, "unit": "pct", "what": "highest home-health utilization rate"}],
+     "expect": {1: {"correct"}}, "contradiction": False, "no_contradiction": True},
 ]
 
 
@@ -271,6 +325,8 @@ async def judge_selftest(client, model: str) -> tuple[list[tuple[str, bool, str]
                 problems.append(f"fact {n}: judged {got}, should be {' or '.join(sorted(allowed))}")
         if t["contradiction"] and not r["contradictions"]:
             problems.append("did not report the contradiction between prose and table")
+        if t.get("no_contradiction") and r["contradictions"]:
+            problems.append("reported a contradiction where there is none: " + " | ".join(r["contradictions"])[:200])
         rows.append((t["name"], not problems, "; ".join(problems)))
     return rows, usages
 
@@ -281,6 +337,26 @@ def deterministic_selftest() -> list[tuple[str, bool, str]]:
 
     def expect(name: str, ok: bool, want: bool, detail: str) -> None:
         rows.append((name, ok == want, f"deterministic pass returned {ok} ({detail or 'no detail'}), expected {want}"))
+
+    rec = {"kind": "reconciles", "benchmark": 211_919_426_723.16, "expense": 197_434_764_474.57, "savings": 14_484_662_248.59, "tol": 1.0}
+    for name, text, want in (
+            ("grader: exact figures that reconcile to the cent pass",
+             "Benchmark $211,919,426,723.16, expense $197,434,764,474.57, savings $14,484,662,248.59.", True),
+            ("grader: abbreviated figures do not count as the exact calculation",
+             "Benchmark $211.9 billion, expense $197.4 billion, savings $14.5 billion.", False),
+            ("grader: whole-dollar figures that are $1 out against each other fail",
+             "Benchmark $211,919,426,723, expense $197,434,764,475, savings $14,484,662,249.", False),
+            ("grader: whole-dollar figures that add up pass",
+             "Benchmark $211,919,426,723, expense $197,434,764,475, savings $14,484,662,248.", True)):
+        full, nums = visible(text, [])
+        ok, detail = grade(rec, full, nums, [], {})
+        expect(name, ok, want, detail)
+    five = {"kind": "portfolio_is", "tins": ["10198331", "10211494", "10211501", "10211534", "10211551"]}
+    for name, saved, want in (
+            ("grader: the same five TINs pass the membership check", ["10211551", "10211534", "10211501", "10211494", "10198331"], True),
+            ("grader: five different TINs fail the membership check", ["10198331", "10211494", "10211501", "10211534", "910214500"], False)):
+        ok, detail = grade(five, "", [], [], {"portfolio": saved})
+        expect(name, ok, want, detail)
 
     table_pos = [{"type": "table", "columns": ["Measure", "USD"], "rows": [["Total monies owed", 2230000.0]]}]
     table_neg = [{"type": "table", "columns": ["Measure", "USD"], "rows": [["Total monies owed", -2230000.0]]}]
