@@ -44,6 +44,20 @@ def run(wh: Warehouse) -> list[tuple[str, bool, str]]:
         check("A4 LEAD net shared savings $", c["net_shared_savings_usd"], 4_670_487, 1)
         check("A4 LEAD total monies owed $M", round(c["total_monies_owed_usd"] / 1e6, 2), -2.23, 0.005)
         check("A4 LEAD financial guarantee $M", round(c["financial_guarantee_usd"] / 1e6, 2), 6.32, 0.005)
+        check("A4 LEAD standalone results summed unrounded", c["sum_of_standalone_tin_results_usd"], 4_670_487)
+        check("A4 LEAD pooled = standalone explained by the first corridor",
+              "first corridor" in c["pooled_vs_standalone_note"] and "agree" in c["pooled_vs_standalone_note"], True)
+        by_tin = {t["tin"]: t.get("projected_net_settlement_usd") for t in m["tins"]}
+        check("A4 LEAD per-TIN projected net settlement $", (by_tin["10211534"], by_tin["10211494"]), (978_948, -1_482_256))
+        check("A4 LEAD per-TIN settlements sum $", c["sum_of_tin_projected_net_settlement_usd"], -2_234_141, 1)
+        check("A4 LEAD settlement split 2 paid / 3 owed",
+              "2 TIN(s) positive" in c["projected_net_settlement_by_tin_note"]
+              and "3 negative" in c["projected_net_settlement_by_tin_note"], True)
+        note = m.get("population_overlap_note", "")
+        check("A4 LEAD overlap caveat: other keys absent, overlap not established",
+              all(x in note for x in ("200050", "none of them is a TIN row", "distinct NPIs", "does not establish")), True)
+        check("A4 LEAD net shared savings labelled net of sequestration",
+              c["settlement_line_labels"]["net_shared_savings_usd"], "Shared savings net of sequestration")
         check("A4 LEAD shortfall to 85% $M", round(m["target"]["room_under_target_usd"] / 1e6, 1), -21.4, 0.05)
         cohorts = {x["cohort"]: x for x in m["cohorts"]}
         for k, want in (("Aged & Disabled", 91.6), ("High Needs", 101.7), ("ESRD", 106.6)):
@@ -59,13 +73,29 @@ def run(wh: Warehouse) -> list[tuple[str, bool, str]]:
         check("A5 LEAD MLR % after each addition", [round(t["combined_mlr_after_adding"] * 100, 1) for t in plan["tins"]],
               [86.2, 83.6])
         check("A5 LEAD candidates at or under 85%", s["candidates"]["with_mlr_at_or_below_target"], 834)
+        pool = ["910214500", "271081647", "10211534", "000000000"]   # two real candidates, one already held, one unknown
+        sp = lead.suggest(LEAD_FIVE, 0.85, candidates=pool)
+        check("A5 LEAD supplied candidate pool: only those TINs screened", sp["candidates"]["screened"], 2)
+        check("A5 LEAD supplied candidate pool: add plan stays inside it",
+              {t["tin"] for t in sp["add_to_reach_target"]["tins"]} <= set(pool), True)
+        check("A5 LEAD supplied candidate pool: pool note given", "limited to the 4 TINs supplied" in sp["candidates"]["pool_note"], True)
+        check("A5 LEAD no pool: no pool note", "pool_note" in s["candidates"], False)
+        check("A5 LEAD above target: candidates are not described as meeting it in any combination",
+              "Do not say any combination" in s["candidates"]["note"], True)
+        check("A5 LEAD at target: candidates can be added in any combination",
+              "any combination without breaking it" in lead.suggest(LEAD_FIVE, 0.99)["candidates"]["note"], True)
         m7 = lead.metrics(LEAD_FIVE + ["910214500", "271081647"])["combined"]
         check("A6 LEAD 7-TIN MLR", round(m7["mlr"] * 100, 1), 83.6)
         check("A6 LEAD 7-TIN margin $M", round(m7["gross_margin_usd"] / 1e6, 1), 111.1)
+        check("A6 LEAD 7-TIN pooled vs standalone: both the TINs' and the pool's corridor position are given",
+              all(x in m7["pooled_vs_standalone_note"] for x in ("go beyond the first corridor", "16.4% of the pooled benchmark")), True)
         hot = lead.metrics(LEAD_FIVE, expense_change_pct=3)["combined"]
         check("A7 LEAD +3% expense MLR", round(hot["mlr"] * 100, 1), 100.2)
         check("A7 LEAD +3% expense margin $k", round(hot["gross_margin_usd"] / 1e3), -329, 1)
         check("A7 LEAD +3% expense net shared $k", round(hot["net_shared_savings_usd"] / 1e3), -336, 1)
+        check("A7 LEAD stress test: pooled vs standalone difference explained",
+              hot["pooled_vs_standalone_note"].startswith("Pooled and standalone differ"), True)
+        check("A7 LEAD stress test: no base-case per-TIN settlement", "sum_of_tin_projected_net_settlement_usd" in hot, False)
 
     if mssp:
         m = mssp.metrics(MSSP_THREE, target_mlr=0.90)
@@ -138,6 +168,46 @@ def run(wh: Warehouse) -> list[tuple[str, bool, str]]:
               (len(block["rows"]), block["rows"][-1][0], block["truncated"]), (config.MAX_ROWS_TO_UI + 1, "TOTAL", True))
         text, _ = agent._run_tool("portfolio_suggest", {"target_mlr": 0.85}, state)
         check("10,000-TIN portfolio: suggestion result under 100k characters", len(text) < 100_000, True)
+
+    # ---- earlier results stay readable; reasoning blocks are replayed only within the current question -------
+    from app.agent import ARCHIVE_KEY, _prepare, archive_results, find_result, public_state, strip_thinking
+
+    def turn(n: int, result: str, thinking: bool = True) -> list[dict]:
+        think = [{"type": "thinking", "thinking": "", "signature": f"sig{n}"}] if thinking else []
+        return [{"role": "user", "content": [{"type": "text", "text": f"question {n}"}]},
+                {"role": "assistant", "content": think + [{"type": "tool_use", "id": f"toolu_{n}", "name": "run_sql",
+                                                           "input": {"sql": f"SELECT {n}"}}]},
+                {"role": "user", "content": [{"type": "tool_result", "tool_use_id": f"toolu_{n}", "content": result}]},
+                {"role": "assistant", "content": [{"type": "text", "text": f"answer {n}"}]}]
+
+    long = "row " * 2000
+    hist = turn(1, long) + turn(2, "small") + turn(3, long)[:3]          # question 3 is still being answered
+    sent = _prepare(hist)
+    old_result = sent[2]["content"][0]["content"]
+    check("earlier result: shortened in what the model sees, with its id", (len(old_result) < 2500, "toolu_1" in old_result), (True, True))
+    check("earlier result: the stored transcript keeps it in full", hist[2]["content"][0]["content"], long)
+    text, block = agent._run_tool("recall_result", {"result_id": "toolu_1"}, {}, hist)
+    check("earlier result: recalled in full by id", (text, block["ok"]), (long, True))
+    text, block = agent._run_tool("recall_result", {"result_id": "toolu_nope"}, {}, hist)
+    check("earlier result: an unknown id is an error, not a guess", ('"error"' in text[:20], block["ok"]), (True, False))
+    kinds = [[c["type"] for c in m["content"]] for m in sent]
+    check("reasoning blocks: dropped from earlier questions", "thinking" in kinds[1] or "thinking" in kinds[5], False)
+    check("reasoning blocks: kept for the question being answered", kinds[9][0], "thinking")
+    check("reasoning blocks: the stored transcript is left alone by the request copy", hist[1]["content"][0]["type"], "thinking")
+    check("reasoning blocks: removed once the question is answered",
+          (strip_thinking(hist), any(c["type"] == "thinking" for m in hist for c in m["content"])), (True, False))
+    st: dict = {"portfolio": ["1"]}
+    kept = archive_results(turn(1, long, False) + turn(2, "small", False), st)
+    check("summarized turns: their results are archived", [r["id"] for r in kept], ["toolu_1", "toolu_2"])
+    check("summarized turns: an archived result is still recalled in full", find_result([], st, "toolu_1"), long)
+    check("summarized turns: the archive stays on the server", (ARCHIVE_KEY in st, public_state(st)), (True, {"portfolio": ["1"]}))
+    keep_chars = config.RESULT_ARCHIVE_CHARS
+    config.RESULT_ARCHIVE_CHARS = len(long) + 10
+    try:
+        archive_results(turn(4, long, False), st)
+        check("summarized turns: the archive is capped, newest kept", [r["id"] for r in st[ARCHIVE_KEY]], ["toolu_2", "toolu_4"])
+    finally:
+        config.RESULT_ARCHIVE_CHARS = keep_chars
 
     # ---- blank expense is not zero cost -------------------------------------------------------------------
     con = duckdb.connect(":memory:")

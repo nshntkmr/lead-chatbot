@@ -14,6 +14,7 @@
   const WORKING = {
     search_columns: 'Looking through the columns…', run_sql: 'Querying the data…',
     create_chart: 'Building a chart…', show_table: 'Preparing a table…',
+    recall_result: 'Checking an earlier result…',
   };
 
   let me = null;
@@ -399,6 +400,20 @@
     els.send.disabled = on ? false : !els.input.value.trim();
   }
 
+  // Depth picker: how hard the model reasons on the next question. Remembered per browser.
+  const DEPTH_LABELS = { low: 'Quick', medium: 'Standard', high: 'Thorough', xhigh: 'Deep', max: 'Maximum' };
+  function setupDepth(effort) {
+    const sel = $('depth'), choices = (effort && effort.choices) || [];
+    if (choices.length < 2) return;
+    for (const c of choices) sel.append(new Option(DEPTH_LABELS[c] || c, c));
+    let saved = null;
+    try { saved = localStorage.getItem('depth'); } catch (e) { /* storage blocked */ }
+    sel.value = choices.includes(saved) ? saved : choices.includes(effort.default) ? effort.default
+      : choices.includes('medium') ? 'medium' : choices[0];
+    sel.addEventListener('change', () => { try { localStorage.setItem('depth', sel.value); } catch (e) { /* ignore */ } });
+    sel.hidden = false;
+  }
+
   async function sendMessage() {
     const text = els.input.value.trim();
     if (!text || controller) return;
@@ -421,7 +436,8 @@
     try {
       const r = await fetch('/api/chat', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
-        body: JSON.stringify({ message: text, conversation_id: currentId, program: currentId ? undefined : pendingProgram }),
+        body: JSON.stringify({ message: text, conversation_id: currentId, program: currentId ? undefined : pendingProgram,
+                               effort: $('depth').value || undefined }),
       });
       if (r.status === 401) { location.href = '/login'; return; }
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText);
@@ -559,6 +575,7 @@
 
   (async () => {
     me = await api('/api/me');
+    setupDepth(me.effort);
     document.title = me.app_name;
     $('brand-name').textContent = me.app_name;
     $('who').textContent = me.user.display_name;

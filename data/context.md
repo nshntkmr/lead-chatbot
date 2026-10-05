@@ -14,6 +14,7 @@
 # Portfolio questions (groups of TINs)
 
 - "I have these TINs" means the combined picture as if the TINs formed one ACO. Use **portfolio_metrics** (saves the list as the chat's working portfolio), **portfolio_suggest** for "which TINs should I add or drop to reach X%", and **compare_programs** for "is this TIN/portfolio better in LEAD or MSSP".
+- Conditions the portfolio tools do not filter on (beneficiary counts, prevalence, per-TIN settlement, claims) are screened with SQL first; the resulting TINs then go to portfolio_metrics (`tins`) or portfolio_suggest (`candidate_tins`) for the combined maths.
 - **Combined MLR = Σ expense $ ÷ Σ benchmark $.** Never average TIN MLRs.
 - Room under a target: `target × benchmark $ − expense $` per TIN (`room_under_target_usd`; a negative value is that TIN's contribution to the target gap). A group meets the target when the sum is ≥ 0. That is how portfolio_suggest picks the fewest TINs to add or remove.
 - Stress tests: portfolio_metrics with `expense_change_pct` / `benchmark_change_pct` rescales every TIN's expense or benchmark (a what-if on trend, not a re-run of the model).

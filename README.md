@@ -118,7 +118,9 @@ Known approximation (LEAD): each TIN's benchmark carries its own High/Low-Spendi
 
 Every question is answered with the full chat history, so context is kept. Two things keep that affordable:
 
-- Old tool results are trimmed, and once a chat passes about 120k tokens the older part is summarized (`COMPACT_AFTER_TOKENS`). The working portfolio lives outside the transcript, so it is never summarized away.
+- Old tool results are shortened in what the model sees, but stay stored: each shortened result carries an id and the model reads it back in full with `recall_result` when a follow-up depends on it. Results from summarized turns are kept the same way, up to `RESULT_ARCHIVE_CHARS` per chat.
+- The model's reasoning is always on for Claude Opus 5.5 / Sonnet 5.5. `ANTHROPIC_EFFORT` (low … max; blank = model default, medium on Opus 5.5) sets how hard it reasons by default, and users can change it per question with the "Depth" picker in the chat box (Quick / Standard / Thorough / Deep = the levels in `EFFORT_CHOICES`; blank hides the picker). `python -m evals.run --effort high` runs the chat cases at a given level. Its reasoning blocks are passed back between the tool calls of one question and dropped once the question is answered.
+- Once a chat passes about 120k tokens the older part is summarized (`COMPACT_AFTER_TOKENS`). The working portfolio lives outside the transcript, so it is never summarized away.
 - The 20k-token schema/domain prompt is cached.
 
 A 1M-token context window is *not* needed for this: the state that matters (the TIN list, the target) is stored explicitly. If you still want it, `ANTHROPIC_BETAS` passes the beta header through; check the current docs for the flag and pricing (input beyond 200k tokens has historically been billed at a higher rate).
