@@ -102,23 +102,27 @@ class ProgramSpec:
 class LeadSpec(ProgramSpec):
     def share(self, margin: float, bm: float) -> dict:
         shared = corridor_share(margin, bm)
-        seq = -SEQUESTRATION * abs(shared)
+        # The workbook takes sequestration on the gross savings or loss, before the corridors (verified against
+        # 'Settlement | sequestration' in every row); within the first corridor that equals 2% of the shared amount.
+        seq = -SEQUESTRATION * abs(margin) if bm > 0 else 0.0
         return {"shared_savings_after_global_corridors_usd": round(shared),
                 "sequestration_usd": round(seq),
                 "net_shared_savings_usd": round(shared + seq),
                 "settlement_line_labels": {
                     "shared_savings_after_global_corridors_usd": "Shared savings after Global corridors (the workbook's "
                                                                  "'Settlement | shared savings or losses', before sequestration)",
-                    "sequestration_usd": "Sequestration (2%)",
+                    "sequestration_usd": "Sequestration (2% of gross savings or loss)",
                     "net_shared_savings_usd": "Shared savings net of sequestration",
                     "enhanced_pcc_repayment_usd": "Enhanced PCC repayment",
                     "total_monies_owed_usd": "Projected net settlement"},
                 "sharing_rule": "LEAD Global corridors: 0–15% of benchmark kept 100%, 15–35% 50%, 35–50% 25%, "
-                                "beyond 50% 10%; 2% sequestration on the shared amount."}
+                                "beyond 50% 10%. Sequestration is 2% of the gross savings or loss before the "
+                                "corridors, as the workbook computes it (the same as 2% of the shared amount while "
+                                "the result stays within the first corridor); it reduces a gain and deepens a loss."}
 
     def net(self, margin: float, bm: float) -> float:
         shared = corridor_share(margin, bm)
-        return shared - SEQUESTRATION * abs(shared)
+        return shared - (SEQUESTRATION * abs(margin) if bm > 0 else 0.0)
 
     def pooling_note(self, rows: list, pooled: float, standalone: float) -> str:
         first = LEAD_CORRIDORS[0][0]
@@ -481,6 +485,22 @@ class PortfolioCalc:
                                           "applying these changes to every TIN. Sums read from the workbook (enhanced PCC "
                                           "repayment, financial guarantee, quality withhold, other adjustments) stay at "
                                           "their base-case values. Call again without the changes for the base case."}
+            # The changes are computed here, so an answer never has to subtract one figure from another itself.
+            base = self.metrics(tins, target_mlr)["combined"]
+            keys = [k for k in ("benchmark_usd", "expense_usd", "gross_margin_usd", "shared_savings_after_global_corridors_usd",
+                                "sequestration_usd", "net_shared_savings_usd", "shared_savings_or_losses_usd",
+                                "shared_after_enhanced_caps_usd", "total_monies_owed_usd") if k in base and k in combined]
+            out["stress_test"]["change_vs_base_case"] = {
+                **{k: {"base_case": base[k], "scenario": combined[k], "change": combined[k] - base[k]} for k in keys},
+                **({"mlr": {"base_case": base["mlr"], "scenario": combined["mlr"],
+                            "change_pct_points": round((combined["mlr"] - base["mlr"]) * 100, 2)}}
+                   if base.get("mlr") is not None and combined.get("mlr") is not None else {}),
+                "note": "Computed changes, scenario minus base case (a negative change in a savings or settlement line "
+                        "means it gets worse). Quote these when you describe the effect; do not subtract figures "
+                        "yourself, and say one change is larger or smaller than another only as these numbers show. "
+                        "The settlement changes by less or more than the gross margin because the shared amount and "
+                        "sequestration move with it, while repayments read from the workbook stay at base case.",
+            }
         out["cohorts"] = self._cohorts(ids, target_mlr, 1 + expense_change_pct / 100, 1 + benchmark_change_pct / 100)
         if out["cohorts"]:
             cb = sum(c["benchmark_usd"] for c in out["cohorts"]); ce = sum(c["expense_usd"] for c in out["cohorts"])

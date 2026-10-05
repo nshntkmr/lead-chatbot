@@ -21,7 +21,7 @@ def _load_dotenv() -> None:
 _load_dotenv()
 
 APP_NAME = os.getenv("APP_NAME", "ACO Data Assistant")
-APP_VERSION = "2026.10.05-5"  # bump when app/ or data/context*.md change; printed at startup and shown in the usage panel
+APP_VERSION = "2026.10.05-9"  # bump when app/ or data/context*.md change; printed at startup and shown in the usage panel
 
 # --- Claude ---------------------------------------------------------------
 # Where Claude is called: "anthropic" (Claude API) or "foundry" (Claude in Microsoft Foundry / Azure).

@@ -66,6 +66,15 @@ def run(wh: Warehouse) -> list[tuple[str, bool, str]]:
               c["gross_margin_usd"], 5)
         check("A4 LEAD cohort gaps sum to the portfolio's", sum(x["room_under_target_usd"] for x in m["cohorts"]),
               m["target"]["room_under_target_usd"], 5)
+        # Settlement lines against the workbook's own columns, for every TIN, including those beyond the first corridor.
+        t = lead.spec.table
+        rows = wh.execute(f'SELECT "Total benchmark", "Gross margin / total savings before risk corridors", '
+                          f'"Settlement | shared savings or losses", "Settlement | sequestration" FROM "{t}" '
+                          f'WHERE "Total benchmark" > 0', [])[1]
+        worst_shared = max(abs(lead.spec.share(g, b)["shared_savings_after_global_corridors_usd"] - sh) for b, g, sh, _ in rows)
+        worst_net = max(abs(lead.spec.net(g, b) - (sh + sq)) for b, g, sh, sq in rows)
+        check("LEAD corridors reproduce the workbook's shared savings for every TIN ($)", worst_shared, 0, 1)
+        check("LEAD sequestration reproduces the workbook's for every TIN, beyond the first corridor too ($)", worst_net, 0, 1)
         s = lead.suggest(LEAD_FIVE, 0.85)
         plan = s["add_to_reach_target"]
         check("A5 LEAD removal impossible", s["remove_to_reach_target"]["possible"], False)
@@ -93,6 +102,20 @@ def run(wh: Warehouse) -> list[tuple[str, bool, str]]:
         check("A7 LEAD +3% expense MLR", round(hot["mlr"] * 100, 1), 100.2)
         check("A7 LEAD +3% expense margin $k", round(hot["gross_margin_usd"] / 1e3), -329, 1)
         check("A7 LEAD +3% expense net shared $k", round(hot["net_shared_savings_usd"] / 1e3), -336, 1)
+        delta = lead.metrics(LEAD_FIVE, expense_change_pct=3)["stress_test"]["change_vs_base_case"]
+        check("A7 LEAD stress test: computed change in gross margin $", delta["gross_margin_usd"]["change"], -5_095_280, 1)
+        check("A7 LEAD stress test: computed change in projected net settlement $", delta["total_monies_owed_usd"]["change"], -5_006_553, 1)
+        check("A7 LEAD stress test: changes are scenario minus base case, line by line",
+              all(v["change"] == v["scenario"] - v["base_case"] for k, v in delta.items() if k.endswith("_usd")), True)
+        # The discount sensitivity as a query would compute it, against values from pandas on the raw CSV (to the cent,
+        # allowing for summation order), and the identity benchmark − expense = savings.
+        q = wh.query(f'SELECT sum("Total benchmark") * 0.98 / 0.97, sum("Total projected expenditures"), '
+                     f'sum("Total benchmark") * 0.98 / 0.97 - sum("Total projected expenditures") FROM "{lead.spec.table}" '
+                     f'WHERE "Benchmark discount" = 0.03', 5, program="LEAD")["rows"][0]
+        check("C4 discount sensitivity: benchmark at 2% $", q[0], 211_919_426_723.16, 0.05)
+        check("C4 discount sensitivity: expense unchanged $", q[1], 197_434_764_474.57, 0.05)
+        check("C4 discount sensitivity: gross savings at 2% $", q[2], 14_484_662_248.59, 0.05)
+        check("C4 discount sensitivity: query result keeps benchmark − expense = savings", abs(q[0] - q[1] - q[2]) <= 0.011, True)
         check("A7 LEAD stress test: pooled vs standalone difference explained",
               hot["pooled_vs_standalone_note"].startswith("Pooled and standalone differ"), True)
         check("A7 LEAD stress test: no base-case per-TIN settlement", "sum_of_tin_projected_net_settlement_usd" in hot, False)

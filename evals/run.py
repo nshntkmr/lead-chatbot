@@ -19,6 +19,7 @@ for a quick look, never as evidence that answers are right.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import asyncio
 import datetime as dt
 import json
@@ -83,7 +84,7 @@ async def run_case(agent: Agent, case: Case, sem: asyncio.Semaphore, use_judge: 
                         if verdict != "correct":
                             checks[i]["ok"] = False
                             checks[i]["detail"] = f"judge: {verdict} — {evidence}"[:300]
-                    checks.append({"label": "no two different numbers for the same metric", "ok": not contradictions,
+                    checks.append({"label": "nothing the answer's own figures contradict", "ok": not contradictions,
                                    "detail": " | ".join(contradictions)[:400]})
                 except Exception as e:
                     checks.append({"label": "judge ran", "ok": False, "detail": f"{type(e).__name__}: {e}"[:300]})
@@ -107,6 +108,19 @@ def _print_rows(title: str, rows: list[tuple[str, bool, str]]) -> int:
     return len(bad)
 
 
+def snapshot() -> str:
+    """Identifies the code a run was made against: the commit, plus a hash of the uncommitted diff if there is one."""
+    import hashlib
+    import subprocess
+    root = Path(__file__).parent.parent
+    try:
+        head = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=root, capture_output=True, text=True, timeout=20).stdout.strip()
+        diff = subprocess.run(["git", "diff", "HEAD"], cwd=root, capture_output=True, timeout=60).stdout
+    except Exception:
+        return "unknown (git not available)"
+    return head + (f"+uncommitted:{hashlib.sha256(diff).hexdigest()[:10]}" if diff.strip() else "") if head else "unknown"
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Run the ACO Data Assistant eval suite.")
     ap.add_argument("--offline", action="store_true", help="deterministic checks only; no model calls")
@@ -114,6 +128,7 @@ def main() -> int:
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--concurrency", type=int, default=4)
     ap.add_argument("--no-judge", action="store_true", help="skip the model judge (a figure shown anywhere then counts)")
+    ap.add_argument("--repeat", type=int, default=1, help="run each selected chat case this many times and report every run")
     ap.add_argument("--effort", default="", choices=["", *config.EFFORT_LEVELS],
                     help="reasoning depth for the answers (default: ANTHROPIC_EFFORT, else the model's own default)")
     args = ap.parse_args()
@@ -148,6 +163,9 @@ def main() -> int:
         print(f"Unknown case id(s): {', '.join(sorted(unknown))}. Use --list.")
         return 2
     cases = [c for c in cases if c.program in wh.programs]
+    if args.repeat > 1:
+        cases = [dataclasses.replace(c, id=f"{c.id}#{k}") for c in cases for k in range(1, args.repeat + 1)]
+    snap = snapshot()
     agent = Agent(wh)
     use_judge = not args.no_judge
     extra_cost = 0.0
@@ -157,13 +175,14 @@ def main() -> int:
         if use_judge:
             rows, usages = await g.judge_selftest(agent.client, config.ANTHROPIC_MODEL)
             extra_cost += sum(_cost(u) for u in usages)
-            bad = _print_rows("\nJudge self-test: it must reject a flipped sign, a prose/table contradiction and a wrong cohort", rows)
+            bad = _print_rows("\nJudge self-test: it must reject a flipped sign, claims its own figures refute and a wrong cohort, and accept approximate wording", rows)
             failed += bad
             if bad:
                 print("  The judge cannot be trusted on this model; chat results below are NOT evidence of correctness.")
         else:
             print("\nJudge skipped (--no-judge): a figure shown anywhere in the answer counts. Not evidence of correctness.")
-        print(f"\nChat cases: {len(cases)} against {config.ANTHROPIC_MODEL} ({config.CLAUDE_PROVIDER}), "
+        print(f"\nCode snapshot: {snap} (app version {config.APP_VERSION})")
+        print(f"Chat cases: {len(cases)} against {config.ANTHROPIC_MODEL} ({config.CLAUDE_PROVIDER}), "
               f"effort {args.effort or config.ANTHROPIC_EFFORT or 'model default'}")
         sem = asyncio.Semaphore(max(1, args.concurrency))
         return await asyncio.gather(*(run_case(agent, c, sem, use_judge, args.effort or None) for c in cases))
@@ -186,6 +205,13 @@ def main() -> int:
         print(f"\nJudge observations for a human to read ({len(notes)}; these do not fail a case):")
         for cid, i, o in notes:
             print(f"  {cid} turn {i}: {o[:260]}")
+    if args.repeat > 1:
+        runs: dict[str, list[bool]] = {}
+        for r in results:
+            runs.setdefault(r["id"].split("#")[0], []).append(r["ok"])
+        print("\nRepeated runs (every run is reported above and kept in the report):")
+        for cid, oks in runs.items():
+            print(f"  {cid:8} passed {sum(oks)} of {len(oks)}")
     bad_cases = sum(1 for r in results if not r["ok"])
     failed += bad_cases
     cost = sum(r["cost_usd"] for r in results)
@@ -195,7 +221,8 @@ def main() -> int:
     out_dir = Path(__file__).parent / "results"
     out_dir.mkdir(exist_ok=True)
     path = out_dir / f"{dt.datetime.now():%Y%m%d-%H%M%S}.json"
-    path.write_text(json.dumps({"app_version": config.APP_VERSION, "model": config.ANTHROPIC_MODEL,
+    path.write_text(json.dumps({"app_version": config.APP_VERSION, "snapshot": snap, "effort": args.effort or config.ANTHROPIC_EFFORT or "model default",
+                                "repeat": args.repeat, "model": config.ANTHROPIC_MODEL,
                                 "provider": config.CLAUDE_PROVIDER, "judge": use_judge,
                                 "cost_usd": round(cost + judge_cost, 4), "cases": results},
                                indent=1, default=str), encoding="utf-8")
