@@ -21,7 +21,7 @@ def _load_dotenv() -> None:
 _load_dotenv()
 
 APP_NAME = os.getenv("APP_NAME", "ACO Data Assistant")
-APP_VERSION = "2026.10.02-13"  # bump when app/ or data/context*.md change; printed at startup and shown in the usage panel
+APP_VERSION = "2026.10.05-5"  # bump when app/ or data/context*.md change; printed at startup and shown in the usage panel
 
 # --- Claude ---------------------------------------------------------------
 # Where Claude is called: "anthropic" (Claude API) or "foundry" (Claude in Microsoft Foundry / Azure).
@@ -37,7 +37,18 @@ if not _provider:
 CLAUDE_PROVIDER = _provider
 # On Foundry this is the DEPLOYMENT name (defaults to the model id, e.g. claude-opus-5-5).
 ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-5-5")
-MAX_TOKENS = int(os.getenv("MAX_TOKENS", "8000"))
+# The reply limit also has to hold the model's reasoning, which counts toward it even though it is not shown.
+MAX_TOKENS = int(os.getenv("MAX_TOKENS", "32000"))
+# How hard the model reasons: low | medium | high | xhigh | max. Blank = the model's own default
+# (medium on Claude Opus 5.5). Higher is slower and costs more per question.
+EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
+ANTHROPIC_EFFORT = os.getenv("ANTHROPIC_EFFORT", "").strip().lower()
+if ANTHROPIC_EFFORT not in EFFORT_LEVELS:
+    ANTHROPIC_EFFORT = ""
+# The levels a user may pick per question in the chat box (comma-separated). Blank = no picker; every
+# question then uses ANTHROPIC_EFFORT. "max" is left out by default because of its cost.
+EFFORT_CHOICES = [e for e in (x.strip().lower() for x in os.getenv("EFFORT_CHOICES", "low,medium,high,xhigh").split(","))
+                  if e in EFFORT_LEVELS]
 MAX_TOOL_ROUNDS = int(os.getenv("MAX_TOOL_ROUNDS", "15"))
 # Optional beta features, comma-separated, sent as the anthropic-beta header (e.g. a long-context beta).
 ANTHROPIC_BETAS = os.getenv("ANTHROPIC_BETAS", "").strip()
@@ -45,6 +56,8 @@ ANTHROPIC_BETAS = os.getenv("ANTHROPIC_BETAS", "").strip()
 # summarized and replaced (the working portfolio is kept separately, so nothing important is lost).
 COMPACT_AFTER_TOKENS = int(os.getenv("COMPACT_AFTER_TOKENS", "120000"))
 COMPACT_KEEP_TURNS = int(os.getenv("COMPACT_KEEP_TURNS", "6"))
+# Full tool results from summarized turns stay readable (recall_result) up to this many characters per chat.
+RESULT_ARCHIVE_CHARS = int(os.getenv("RESULT_ARCHIVE_CHARS", "400000"))
 SUMMARY_MODEL = os.getenv("SUMMARY_MODEL", "")  # blank = same as ANTHROPIC_MODEL
 # Spend estimates: list prices × this multiplier (1.1 for a Foundry US Data Zone deployment or inference_geo=us;
 # below 1 for a negotiated discount). Per-model rates can be overridden in data/pricing.json.

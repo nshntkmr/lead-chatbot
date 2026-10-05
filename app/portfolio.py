@@ -81,6 +81,16 @@ class ProgramSpec:
     extra_distinct: dict[str, str] = field(default_factory=dict)   # label -> SQL expression; distinct values over the TINs
     params: dict = field(default_factory=dict)
     net_key: str = ""        # key in share() holding the net shared result
+    per_tin: dict[str, str] = field(default_factory=dict)   # label -> SQL expression read per TIN (workbook base case)
+    notes: str = ""          # SQL expression for the per-TIN source notes ('' if the extract has none)
+
+    def net(self, margin: float, bm: float) -> float:
+        """The net shared result at full precision (share() rounds each line for display)."""
+        return self.share(margin, bm).get(self.net_key, 0)
+
+    def pooling_note(self, rows: list, pooled: float, standalone: float) -> str:
+        """Why the pooled result and the sum of standalone TIN results agree or differ."""
+        return ""
 
     def share(self, margin: float, bm: float) -> dict:          # overridden per program
         raise NotImplementedError
@@ -96,8 +106,42 @@ class LeadSpec(ProgramSpec):
         return {"shared_savings_after_global_corridors_usd": round(shared),
                 "sequestration_usd": round(seq),
                 "net_shared_savings_usd": round(shared + seq),
+                "settlement_line_labels": {
+                    "shared_savings_after_global_corridors_usd": "Shared savings after Global corridors (the workbook's "
+                                                                 "'Settlement | shared savings or losses', before sequestration)",
+                    "sequestration_usd": "Sequestration (2%)",
+                    "net_shared_savings_usd": "Shared savings net of sequestration",
+                    "enhanced_pcc_repayment_usd": "Enhanced PCC repayment",
+                    "total_monies_owed_usd": "Projected net settlement"},
                 "sharing_rule": "LEAD Global corridors: 0–15% of benchmark kept 100%, 15–35% 50%, 35–50% 25%, "
                                 "beyond 50% 10%; 2% sequestration on the shared amount."}
+
+    def net(self, margin: float, bm: float) -> float:
+        shared = corridor_share(margin, bm)
+        return shared - SEQUESTRATION * abs(shared)
+
+    def pooling_note(self, rows: list, pooled: float, standalone: float) -> str:
+        first = LEAD_CORRIDORS[0][0]
+        outside = [r.tin for r in rows if abs(r.margin) > first * r.bm_usd]
+        gains, losses = sum(r.margin > 0 for r in rows), sum(r.margin < 0 for r in rows)
+        if not outside and not (gains and losses):
+            return (f"Pooled and standalone agree for this portfolio because every TIN's "
+                    f"{'savings' if gains else 'losses'} fall inside the first corridor (within {first:.0%} of its own "
+                    f"benchmark, shared 100%) and each carries the same {SEQUESTRATION:.0%} sequestration. Give this as the "
+                    "reason; 'all TINs show savings' alone is not sufficient. It does not carry over to other portfolios "
+                    "or to a stress test.")
+        why = []
+        if gains and losses:
+            why.append(f"{gains} TIN(s) show savings and {losses} show losses, which net against each other when pooled "
+                       "while sequestration reduces each gain and deepens each loss when taken separately")
+        if outside:
+            bm = sum(r.bm_usd for r in rows)
+            share = abs(sum(r.margin for r in rows)) / bm if bm else 0.0
+            why.append(f"{len(outside)} TIN(s) go beyond the first corridor ({first:.0%} of their own benchmark) when taken "
+                       f"separately ({_some(outside, 5)}), so part of their result is shared at the lower rates, while the "
+                       f"pooled margin is {share:.1%} of the pooled benchmark, which puts a different amount into those "
+                       "lower-rate bands")
+        return f"Pooled and standalone differ by ${abs(pooled - standalone):,.0f} because " + "; and ".join(why) + "."
 
     def worst_case(self, bm: float) -> tuple[str, float, str]:
         return ("shared_loss_if_loss_equals_benchmark_usd", corridor_share(-bm, bm),
@@ -206,6 +250,9 @@ def _spec_for(wh: Warehouse, program: str, table: str) -> ProgramSpec | None:
             },
             extra_distinct={"benchmark_discount_rates_applied": _q("Benchmark discount")} if "Benchmark discount" in have else {},
             net_key="net_shared_savings_usd",
+            per_tin=({"projected_net_settlement_usd": _q("Settlement | total monies owed")}
+                     if "Settlement | total monies owed" in have else {}),
+            notes=_q("Input notes") if "Input notes" in have else "",
             params={"note": "Each TIN's benchmark carries its own High/Low-Spending classification (discount 1.75% vs "
                             "3%, regional adjustment). A real ACO gets one classification for the whole population."},
         )
@@ -378,18 +425,35 @@ class PortfolioCalc:
         nk = self.spec.net_key
         if nk and nk in combined and len(valid) > 1:
             # Sharing rules are not linear, so one pooled ACO differs from the sum of standalone TIN results.
-            combined["sum_of_standalone_tin_results_usd"] = round(sum(self.spec.share(r.margin, r.bm_usd).get(nk, 0) for r in valid))
+            pooled = self.spec.net(margin, bm)
+            standalone = sum(self.spec.net(r.margin, r.bm_usd) for r in valid)   # summed unrounded, rounded once
+            combined["sum_of_standalone_tin_results_usd"] = round(standalone)
             combined["settlement_method_note"] = (
                 f"{nk} applies the sharing rules once to the pooled margin of all the TINs, as one ACO. "
                 "sum_of_standalone_tin_results_usd applies them to each TIN separately and adds the results (what summing "
-                "the workbook's per-TIN column gives). The two differ because gains and losses net against each other "
-                "when pooled. Report the pooled figure and say it is pooled; neither is a CMS consolidated calculation.")
+                "the workbook's per-TIN column gives). Report the pooled figure and say it is pooled: it is a modeling "
+                "assumption, not a CMS consolidated calculation.")
+            note = self.spec.pooling_note(valid, pooled, standalone)
+            if note:
+                combined["pooled_vs_standalone_note"] = note
         for label, expr in self.spec.extra_sums.items():
             combined[label] = round(self._sum(expr, ids))
         for label, expr in self.spec.extra_distinct.items():
             combined[label] = self._distinct(expr, ids)
         if "enhanced_pcc_repayment_usd" in combined:
             combined["total_monies_owed_usd"] = round(combined["net_shared_savings_usd"] + combined["enhanced_pcc_repayment_usd"])
+        # Per-TIN workbook figures are base case, so they are left out of a stress test.
+        per_tin = {} if expense_change_pct or benchmark_change_pct else self._per_tin(ids)
+        for label in self.spec.per_tin if per_tin else ():
+            vals = [per_tin[t][label] for t in ids if per_tin.get(t, {}).get(label) is not None]
+            combined[f"sum_of_tin_{label}"] = round(sum(vals))
+            combined[f"{label.removesuffix('_usd')}_by_tin_note"] = (
+                f"Each TIN's standalone figure from the workbook, shown per TIN in the user's table: "
+                f"{sum(v > 0 for v in vals)} TIN(s) positive (projected to be paid to the ACO), "
+                f"{sum(v < 0 for v in vals)} negative (projected to be owed to CMS). Say this split in one line.")
+        overlap = self._overlap(ids, bool(dup))
+        if overlap.get("warning"):
+            warnings.append(overlap.pop("warning"))
         out = {
             "program": self.program,
             "tin_count": len(valid),
@@ -398,9 +462,11 @@ class PortfolioCalc:
                 {"tin": r.tin, "organization": r.org, self._cls_key(): r.cls, "person_years": round(r.py, 1),
                  "benchmark_usd": round(r.bm_usd), "expense_usd": round(r.exp_usd), "gross_margin_usd": round(r.margin),
                  "mlr": round(r.mlr, 4) if r.mlr is not None else None,
+                 **{k: round(v) for k, v in per_tin.get(r.tin, {}).items() if v is not None},
                  **({"room_under_target_usd": round(r.headroom(target_mlr))} if target_mlr else {})}
                 for r in valid],
             "warnings": warnings,
+            **overlap,
         }
         if target_mlr and bm > 0:
             room = sum(r.headroom(target_mlr) for r in valid)
@@ -428,6 +494,63 @@ class PortfolioCalc:
                                   + (" room_under_target_usd is target × cohort benchmark − cohort expense; the cohort values "
                                      "sum to the portfolio's room_under_target_usd, so a negative value is that cohort's "
                                      "contribution to the target gap." if target_mlr else ""))
+        return out
+
+    def _per_tin(self, tins: list[str]) -> dict[str, dict]:
+        """{tin: {label: value}} for the spec's per-TIN workbook columns."""
+        if not tins or not self.spec.per_tin:
+            return {}
+        labels = list(self.spec.per_tin)
+        rows = self.wh.execute(
+            f'SELECT {self.spec.tin}, {", ".join(self.spec.per_tin[k] for k in labels)} FROM "{self.spec.table}" '
+            f'WHERE {self.spec.tin} IN ({", ".join("?" * len(tins))})', tins)[1]
+        return {str(r[0]): {k: (float(v) if v is not None else None) for k, v in zip(labels, r[1:])} for r in rows}
+
+    def _overlap(self, tins: list[str], shared_npi: bool) -> dict:
+        """What the source notes say about TINs whose NPI data also map to other selection keys, in the words the
+        answer should use. Distinct NPIs and absent keys rule out the flagged double-counting, nothing more."""
+        if not tins or not self.spec.notes:
+            return {}
+        s = self.spec
+        rows = self.wh.execute(
+            f'SELECT {s.tin}, {s.notes} FROM "{s.table}" WHERE {s.tin} IN ({", ".join("?" * len(tins))}) '
+            f"AND {s.notes} ILIKE '%selection keys%'", tins)[1]
+        other: dict[str, list[str]] = {}
+        for tin, note in rows:
+            m = re.search(r"selection keys\s+([\d,\s]+)", str(note))
+            keys = [k for k in clean_tins(m.group(1)) if k != str(tin)] if m else []
+            if keys:
+                other[str(tin)] = keys
+        if not other:
+            return {}
+        have = set(tins)
+        both = {t: [k for k in ks if k in have] for t, ks in other.items()}
+        both = {t: ks for t, ks in both.items() if ks}
+        all_keys = sorted({k for ks in other.values() for k in ks})
+        checked = len(all_keys) <= 1000
+        in_file = {str(r[0]) for r in self.wh.execute(
+            f'SELECT {s.tin} FROM "{s.table}" WHERE {s.tin} IN ({", ".join("?" * len(all_keys))})', all_keys)[1]} if checked else set()
+        eg = "; ".join(f"{t} also maps to {', '.join(ks)}" for t, ks in list(other.items())[:10])
+        out = {"alternative_selection_keys": [{"tin": t, "other_keys": ks} for t, ks in list(other.items())[:20]]}
+        if both:
+            out["warning"] = ("TINs that the source notes say map to the same organization-level NPI data are both in this "
+                              "portfolio, so the combined figures double-count that population: "
+                              + "; ".join(f"{t} with {', '.join(ks)}" for t, ks in list(both.items())[:20]))
+            where = "Some of those keys are in this portfolio (see warnings). "
+        elif in_file:
+            where = (f"None of those other keys is in this portfolio; {len(in_file)} of them exist as TIN rows in this file "
+                     "and should not be added alongside. ")
+        elif checked:
+            where = "None of those other keys is in this portfolio, and none of them is a TIN row in this file. "
+        else:
+            where = "None of those other keys is in this portfolio. "
+        out["population_overlap_note"] = (
+            f"Source notes for {len(other)} of the {len(tins)} TINs say their organization-level NPI data also map to "
+            f"other selection keys ({eg}{'; …' if len(other) > 10 else ''}), which must not be added as independent "
+            "populations. " + where
+            + ("" if shared_npi else "The TINs in this portfolio have distinct NPIs. ")
+            + "The file does not establish whether beneficiary populations overlap between the TINs. State the caveat in "
+              "these terms: do not write that there is no overlap or no double-counting.")
         return out
 
     def _cls_key(self) -> str:
@@ -462,7 +585,7 @@ class PortfolioCalc:
     def suggest(self, current: list[str], target_mlr: float, exclude: list[str] | None = None,
                 name_like: str | None = None, class_like: str | None = None,
                 min_person_years: float | None = None, max_person_years: float | None = None,
-                limit: int = 25) -> dict:
+                limit: int = 25, candidates: list[str] | None = None) -> dict:
         cur_rows, unknown = self.fetch(current)
         cur_rows, _, no_expense = self._usable(cur_rows)
         room = sum(r.headroom(target_mlr) for r in cur_rows)
@@ -513,6 +636,10 @@ class PortfolioCalc:
         if exclude_set:
             where.append(f'{s.tin} NOT IN ({", ".join("?" * len(exclude_set))})')
             params += list(exclude_set)
+        if candidates:   # a pool screened elsewhere (any column, via SQL); the room maths still runs here
+            pool = [t for t in dict.fromkeys(candidates) if t not in exclude_set]
+            where.append(f'{s.tin} IN ({", ".join("?" * len(pool))})' if pool else "FALSE")
+            params += pool
         if name_like:
             where.append(f"{s.org} ILIKE ?")
             params.append(f"%{name_like}%")
@@ -555,10 +682,18 @@ class PortfolioCalc:
             "with_mlr_at_or_below_target": fits_alone,
             "largest_by_benchmark": [fmt(r) for r in top("room >= 0", "bm DESC")],
             "largest_by_margin": [fmt(r) for r in top("room >= 0", "bm - ex DESC")],
-            "note": ("TINs with MLR at or below the target can be added in any combination without breaking it. "
-                     "room_under_target_usd is target × benchmark − expense; a set meets the target when it sums "
-                     "(current + added) to ≥ 0."),
+            "note": (("TINs with MLR at or below the target can be added in any combination without breaking it. "
+                      if room >= 0 else
+                      "The current TINs are above the target, so adding a TIN with MLR at or below it lowers the combined "
+                      "MLR but does not by itself reach the target: that needs enough of them (see add_to_reach_target). "
+                      "Do not say any combination of them meets the target. ")
+                     + "room_under_target_usd is target × benchmark − expense; a set meets the target when it sums "
+                       "(current + added) to ≥ 0."),
         }
+        if candidates:
+            out["candidates"]["pool_note"] = (
+                f"Candidates were limited to the {len(dict.fromkeys(candidates))} TINs supplied; {screened} of them are "
+                "outside the current portfolio and have a benchmark and an expense. Say what the pool was screened on.")
         if room > 0 and fits_within_room:
             out["candidates"]["above_target_but_fit_within_current_room"] = {
                 "count": fits_within_room,

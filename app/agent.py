@@ -9,7 +9,7 @@ import logging
 import os
 from typing import AsyncIterator
 
-from anthropic import AsyncAnthropic
+from anthropic import AsyncAnthropic, BadRequestError
 
 from . import config
 from .data import Warehouse, fit_rows
@@ -99,8 +99,10 @@ TOOLS = [
             "Use 'add'/'remove' with save=false for a what-if that should not change the working portfolio. "
             "Pass target_mlr to get the room under (or shortfall to) a target. expense_change_pct / benchmark_change_pct run a "
             "stress test (what if costs run 3% hot). Also returns the financial guarantee, quality withhold at risk and "
-            "the worst-case loss after corridors. Use this tool, not run_sql, whenever the user asks about 'my TINs', "
-            "a list of TINs, the effect of adding/removing TINs, or a what-if on their portfolio."),
+            "a loss figure with a note saying what it is (LEAD: the shared loss in an illustrative scenario where losses "
+            "equal the whole benchmark, not a maximum; MSSP: the capped maximum shared loss). Use this tool for the "
+            "combined figures whenever the user asks about 'my TINs', a list of TINs, the effect of adding/removing "
+            "TINs, or a what-if on their portfolio. The TIN list may come from a run_sql screen on any column."),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -129,6 +131,10 @@ TOOLS = [
                 "target_mlr": {"type": "number", "description": "MLR target as a fraction, e.g. 0.85"},
                 "tins": {"type": "array", "items": {"type": "string"}, "description": "Optional. Defaults to the working portfolio."},
                 "exclude_tins": {"type": "array", "items": {"type": "string"}},
+                "candidate_tins": {"type": "array", "items": {"type": "string"},
+                                   "description": "Optional. Limit the candidates to these TINs. Use it when the user's "
+                                                  "conditions go beyond the filters below (beneficiary counts, prevalence, "
+                                                  "settlement, claims…): screen with run_sql first, then pass the TINs here."},
                 "name_like": {"type": "string", "description": "Only candidates whose organization name contains this text"},
                 "spending_class": {"type": "string", "enum": ["High Spending ACO", "Low Spending ACO"]},
                 "min_person_years": {"type": "number"},
@@ -136,6 +142,19 @@ TOOLS = [
                 "limit": {"type": "integer", "description": "Candidates per list (default 25, max 100)"},
             },
             "required": ["target_mlr"],
+        },
+    },
+    {
+        "name": "recall_result",
+        "description": (
+            "Read again, in full, the result of a tool call made earlier in this chat. Results from earlier questions "
+            "are shortened in what you see and end with their result id. Use this whenever a follow-up depends on "
+            "details of an earlier result (a candidate list, per-TIN rows, a scenario's figures) before you rely on "
+            "them, instead of working from the shortened text or saying they can no longer be checked."),
+        "input_schema": {
+            "type": "object",
+            "properties": {"result_id": {"type": "string", "description": "The id given at the end of the shortened result"}},
+            "required": ["result_id"],
         },
     },
 ]
@@ -161,7 +180,8 @@ questions in plain English; you answer them from the data tables described below
 # How to work
 1. Every number you state must come from a query you ran in this conversation (run_sql, create_chart or \
 show_table) or from a '= value' constant shown in the schema below. Never estimate, recall or invent values. \
-If a query fails, fix it and retry.
+If a query fails, fix it and retry. Results from earlier questions are shortened in what you see: when an answer \
+depends on details of one, read it again with recall_result rather than working from the fragment.
 2. Column names are long and contain spaces and symbols such as | [ ] ! — always wrap them in double quotes \
 exactly as listed, e.g. "Expenditure PBPM | HN | BY2 2025". Wrap table names in double quotes too.
 3. If you are not sure which column answers the question, call search_columns first. It returns each column's \
@@ -189,6 +209,11 @@ combined MLR, benchmark $, margin $ and person-years, state the target and wheth
 in a table. Say when a figure is an approximation (mixed spending classes, TINs sharing an NPI). Use the numbers the \
 portfolio tools return — including their per-TIN table, cohort block and settlement lines — rather than recomputing \
 them with run_sql or repeating the table with show_table; the tool keeps every figure on one consistent basis. \
+That covers the combined maths only. To choose, screen or rank TINs on any other column (beneficiary counts, \
+prevalence, per-TIN settlement, claims, data-quality notes…), use run_sql freely, then hand the resulting TINs to \
+the portfolio tools: as tins to portfolio_metrics for their combined figures or a what-if, or as candidate_tins to \
+portfolio_suggest for additions against a target. If a screen returns more TINs than a query result can list, \
+tighten or rank it and say which cut you applied. \
 The portfolio tools already show the user a per-TIN table with a TOTAL row, so do not repeat the per-TIN rows or \
 the combined figures a second time in your text: give the answer and the target gap first, then only what the table \
 does not show (settlement lines, cohorts, caveats). The same holds for the candidates table that portfolio_suggest \
@@ -198,8 +223,12 @@ cohort contributes the largest dollar shortfall to the target (its negative room
 calling it "the problem". Describe model parameters as what these projections apply, using the values the tool returns (LEAD: \
 benchmark_discount_rates_applied — "all five TIN projections apply a 3% benchmark discount"); never write that a \
 classification means a rule applies. The settlement figure applies the sharing rules to the pooled margin as one ACO: \
-say "pooled" when you report it, and when sum_of_standalone_tin_results_usd differs materially mention that summing \
-the TINs' standalone results gives that other figure. In a stress test, the PCC repayment, guarantee and withhold stay \
+say "pooled" when you report it and that pooling is a modeling assumption, and when \
+sum_of_standalone_tin_results_usd differs materially mention that summing the TINs' standalone results gives that \
+other figure. Whenever you compare the two, give the reason in pooled_vs_standalone_note and no other. Label the \
+settlement lines with the wording in settlement_line_labels. When the per-TIN table carries a standalone projected \
+net settlement column, say in one line how many TINs are projected to receive money and how many to owe it. State \
+the overlap caveat as population_overlap_note words it. In a stress test, the PCC repayment, guarantee and withhold stay \
 at base case; say so. TINs returned by portfolio_suggest are mathematical candidates: name the objective (fewest \
 additions, largest by benchmark…) and say that operational eligibility and beneficiary overlap have not been checked. \
 Suggestions never change the saved portfolio; only an explicit instruction from the user does. A stress test or \
@@ -210,8 +239,9 @@ words "the tool" or any paraphrase of it ("the suggestion tool", "the screen I r
 portfolio_metrics, run_sql or "via …" in the answer or the "Based on" line, which lists workbook column \
 names only. State a limit as a fact about the analysis ("candidates were screened on the base case"), not about tooling. Say "spending reduction needed to reach the \
 target" for a shortfall, "room under the target" for a surplus, and "contribution to the target gap" for a TIN's or \
-cohort's share. Keep three measures apart and label each: gross savings (before sharing), shared savings (after \
-corridors/sharing and sequestration) and projected net settlement (after repayments).
+cohort's share. Keep the measures apart and label each: gross savings (before sharing), shared savings (after \
+corridors/sharing; where sequestration applies it is its own line and the result is "shared savings net of \
+sequestration") and projected net settlement (after repayments).
 11. Corrections. Results from earlier turns may be shown to you shortened to save space; the full result was in front \
 of you when you wrote that earlier answer. Never retract or cast doubt on an earlier statement because its \
 supporting detail is no longer visible. If you need to re-check a TIN or figure, query that specific TIN first; \
@@ -314,9 +344,18 @@ class Agent:
         return tools
 
     # ---------------------------------------------------------------- tools
-    def _run_tool(self, name: str, args: dict, state: dict) -> tuple[str, dict]:
+    def _run_tool(self, name: str, args: dict, state: dict, history: list | None = None) -> tuple[str, dict]:
         """Execute a tool. Returns (text result for Claude, UI block for the browser). May update state."""
         program = state.get("program") or self.default_program
+        if name == "recall_result":
+            rid = str(args.get("result_id", "")).strip()
+            found = find_result(history or [], state, rid)
+            block = {"type": "tool", "name": name, "label": "Checked an earlier result", "ok": found is not None}
+            if found is None:
+                block["detail"] = "not stored any more"
+                return json.dumps({"error": f"No stored result with id {rid!r}. It is no longer kept; run the "
+                                            "query or calculation again to get it."}), block
+            return found, block
         if name == "search_columns":
             res = self.wh.search_columns(args.get("keywords", ""), args.get("table"), program=program)
             n = len(res.get("matches", []))
@@ -445,9 +484,15 @@ class Agent:
         cols = ["TIN", "Organization", calc.spec.cls_header, "Person years", "Benchmark $", "Expense $", "Gross margin $", "MLR %"]
         rows = [[t["tin"], t["organization"], t.get(ck, ""), t["person_years"], t["benchmark_usd"], t["expense_usd"],
                  t["gross_margin_usd"], pct(t["mlr"])] for t in res["tins"]]
+        total = ["TOTAL", f"{res['tin_count']} TINs", "", c["person_years"], c["benchmark_usd"], c["expense_usd"],
+                 c["gross_margin_usd"], pct(c["mlr"])]
+        if "sum_of_tin_projected_net_settlement_usd" in c:   # each TIN's standalone workbook figure; base case only
+            cols.append("Projected net settlement $ (standalone)")
+            for row, t in zip(rows, res["tins"]):
+                row.append(t.get("projected_net_settlement_usd"))
+            total.append(c["sum_of_tin_projected_net_settlement_usd"])
         shown = rows[:config.MAX_ROWS_TO_UI]
-        rows = shown + [["TOTAL", f"{res['tin_count']} TINs", "", c["person_years"], c["benchmark_usd"], c["expense_usd"],
-                         c["gross_margin_usd"], pct(c["mlr"])]]
+        rows = shown + [total]
         label = {"set": "Portfolio", "add": "Portfolio after adding", "remove": "Portfolio after removing", "current": "Current portfolio"}[action]
         title = f"{program} {label.lower()}: {res['tin_count']} TINs · MLR {c['mlr']:.1%}" if c["mlr"] is not None else label
         if shock_e or shock_b:
@@ -479,7 +524,8 @@ class Agent:
         limit = max(1, min(int(a.get("limit") or 25), 100))
         res = calc.suggest(tins, target, exclude=clean_tins(a.get("exclude_tins")), name_like=a.get("name_like"),
                            class_like=a.get("spending_class"), min_person_years=a.get("min_person_years"),
-                           max_person_years=a.get("max_person_years"), limit=limit)
+                           max_person_years=a.get("max_person_years"), limit=limit,
+                           candidates=clean_tins(a.get("candidate_tins")))
         res.update(_tin_list("working_portfolio", tins))
         ck = calc._cls_key()
         cols = ["TIN", "Organization", calc.spec.cls_header, "Person years", "Benchmark $", "Gross margin $", "MLR %", "Room under target $"]
@@ -518,43 +564,65 @@ class Agent:
         return json.dumps(res, default=str), block
 
     # ----------------------------------------------------------------- loop
-    async def run(self, history: list, user_text: str, state: dict | None = None) -> AsyncIterator[dict]:
+    async def run(self, history: list, user_text: str, state: dict | None = None,
+                  effort: str | None = None) -> AsyncIterator[dict]:
         """Append the user's turn to `history` (mutated in place) and stream UI events.
-        `state` is the conversation's working set (portfolio TINs, target); tools may update it."""
+        `state` is the conversation's working set (portfolio TINs, target); tools may update it.
+        `effort` is the reasoning depth for this question; None = the configured default."""
         state = state if state is not None else {}
-        summary_usage = await self._compact_if_needed(history)
+        summary_usage = await self._compact_if_needed(history, state)
         if summary_usage:
             yield summary_usage
         history.append({"role": "user", "content": [{"type": "text", "text": user_text}]})
         extra = {"extra_headers": {"anthropic-beta": config.ANTHROPIC_BETAS}} if config.ANTHROPIC_BETAS else {}
+        effort = effort if effort in config.EFFORT_LEVELS else config.ANTHROPIC_EFFORT
+        if effort:
+            extra["output_config"] = {"effort": effort}
+        # Static block first (cached), then the small dynamic block. Prefix caching keeps the big block warm.
+        # Both are fixed for the whole question: the model's reasoning blocks are only valid while what came
+        # before them is unchanged, and a tool that changes the portfolio says so in its own result.
+        program = state.get("program") or self.default_program or next(iter(self.system_texts))
+        system = [{"type": "text", "text": self.system_texts[program], "cache_control": {"type": "ephemeral"}},
+                  {"type": "text", "text": _dynamic_text(state)}]
 
         for round_no in range(config.MAX_TOOL_ROUNDS + 1):
             last_round = round_no == config.MAX_TOOL_ROUNDS
-            # Static block first (cached), then the small dynamic block. Prefix caching keeps the big block warm.
-            program = state.get("program") or self.default_program or next(iter(self.system_texts))
-            system = [{"type": "text", "text": self.system_texts[program], "cache_control": {"type": "ephemeral"}},
-                      {"type": "text", "text": _dynamic_text(state)}]
             kwargs = dict(model=config.ANTHROPIC_MODEL, max_tokens=config.MAX_TOKENS, system=system,
                           tools=self.tools_for(program), messages=_prepare(history), **extra)
             if last_round:
                 kwargs["tool_choice"] = {"type": "none"}
-            async with self.client.messages.stream(**kwargs) as stream:
-                async for event in stream:
-                    if event.type == "content_block_delta" and event.delta.type == "text_delta":
-                        yield {"type": "text", "text": event.delta.text}
-                    elif event.type == "content_block_start" and event.content_block.type == "tool_use":
-                        yield {"type": "tool_pending", "name": event.content_block.name}
-                final = await stream.get_final_message()
+            for attempt in (1, 2):
+                try:
+                    async with self.client.messages.stream(**kwargs) as stream:
+                        async for event in stream:
+                            if event.type == "content_block_delta" and event.delta.type == "text_delta":
+                                yield {"type": "text", "text": event.delta.text}
+                            elif event.type == "content_block_start" and event.content_block.type == "tool_use":
+                                yield {"type": "tool_pending", "name": event.content_block.name}
+                        final = await stream.get_final_message()
+                    break
+                except BadRequestError as e:
+                    # A reasoning block the service will not take back: answer this round without them, once.
+                    if attempt == 2 or "thinking" not in str(e).lower() or not strip_thinking(history):
+                        raise
+                    log.warning("Reasoning blocks rejected (%s); retrying without them", str(e)[:200])
+                    kwargs["messages"] = _prepare(history)
             yield _usage_event(final, config.ANTHROPIC_MODEL, "chat")
 
+            # Reasoning blocks go back unchanged with the tool results, so the model keeps its line of thought
+            # from one tool call to the next; they are dropped once the question is answered.
             content = []
             for b in final.content:
                 if b.type == "text":
                     content.append({"type": "text", "text": b.text})
                 elif b.type == "tool_use":
                     content.append({"type": "tool_use", "id": b.id, "name": b.name, "input": b.input})
-            if not content:
-                content = [{"type": "text", "text": "(no response)"}]
+                elif b.type == "thinking":
+                    content.append({"type": "thinking", "thinking": b.thinking, "signature": b.signature})
+                elif b.type == "redacted_thinking":
+                    content.append({"type": "redacted_thinking", "data": b.data})
+            if not any(c["type"] in ("text", "tool_use") for c in content):
+                content.append({"type": "text", "text": "(no response)"})
             history.append({"role": "assistant", "content": content})
 
             if final.stop_reason == "max_tokens":
@@ -567,7 +635,7 @@ class Agent:
                 if b["type"] != "tool_use":
                     continue
                 try:
-                    text, block = await asyncio.to_thread(self._run_tool, b["name"], b["input"], state)
+                    text, block = await asyncio.to_thread(self._run_tool, b["name"], b["input"], state, history)
                 except Exception as e:  # never let a tool crash the chat
                     log.exception("tool failed")
                     text = json.dumps({"error": str(e)[:500]})
@@ -577,9 +645,10 @@ class Agent:
                 results.append({"type": "tool_result", "tool_use_id": b["id"], "content": text,
                                 **({"is_error": True} if '"error"' in text[:20] else {})})
             history.append({"role": "user", "content": results})
+        strip_thinking(history)
 
     # ------------------------------------------------------------ compaction
-    async def _compact_if_needed(self, history: list) -> dict | None:
+    async def _compact_if_needed(self, history: list, state: dict | None = None) -> dict | None:
         """Keep long chats within budget: summarize the older part of the transcript once it grows past
         COMPACT_AFTER_TOKENS (estimated). The summary replaces those turns in the stored history; the working
         portfolio lives in state, so nothing the user relies on depends on the transcript alone."""
@@ -605,6 +674,10 @@ class Agent:
         except Exception:
             log.exception("compaction failed; continuing with full history")
             return None
+        kept = archive_results(old, state) if state is not None else []
+        if kept:
+            summary += ("\n\nEarlier results that can still be read in full with recall_result (id — what it was):\n"
+                        + "\n".join(f"- {r['id']} — {r['tool']}({json.dumps(r['input'], default=str)[:300]})" for r in kept))
         history[:] = [
             {"role": "user", "content": [{"type": "text", "text": "[Summary of the earlier part of this chat]\n" + summary}]},
             {"role": "assistant", "content": [{"type": "text", "text": "Understood. I'll continue from that summary."}]},
@@ -732,18 +805,80 @@ def _transcript(msgs: list) -> str:
 def _prepare(history: list) -> list:
     """Copy history for the API: shrink old tool results and add a cache breakpoint."""
     msgs = copy.deepcopy(history)
+    starts = _turn_starts(msgs)
+    for m in msgs[:starts[-1]] if starts else []:   # reasoning blocks are only replayed within the current question
+        m["content"] = [c for c in m["content"] if c.get("type") not in THINKING_TYPES] or m["content"]
     # Keep full tool output for the current and the previous exchange (follow-ups such as "add those two" or
     # "go back to the original five" lean on the previous answer's evidence); older results get trimmed.
-    starts = _turn_starts(msgs)
     keep_from = starts[-2] if len(starts) >= 2 else 0
     for m in msgs[:keep_from]:
         for c in m["content"]:
             if c.get("type") == "tool_result" and isinstance(c.get("content"), str) and len(c["content"]) > 1500:
-                c["content"] = c["content"][:1500] + (" …[shortened to save space; the full result was available when "
-                                                      "the answer that followed was written — re-run the query to see it again]")
+                c["content"] = c["content"][:1500] + (
+                    " …[shortened to save space; the full result was available when the answer that followed was "
+                    f"written. Result id: {c.get('tool_use_id', '')} — call recall_result with this id to read it in "
+                    "full before relying on anything not shown here]")
     if msgs and msgs[-1]["content"]:
         msgs[-1]["content"][-1]["cache_control"] = {"type": "ephemeral"}
     return msgs
+
+
+THINKING_TYPES = ("thinking", "redacted_thinking")
+
+
+def strip_thinking(history: list) -> bool:
+    """Remove the model's reasoning blocks from a stored history (in place). True if any were removed."""
+    removed = False
+    for m in history:
+        if m["role"] == "assistant" and any(c.get("type") in THINKING_TYPES for c in m["content"]):
+            m["content"] = [c for c in m["content"] if c.get("type") not in THINKING_TYPES] or \
+                [{"type": "text", "text": "(no response)"}]
+            removed = True
+    return removed
+
+
+def find_result(history: list, state: dict, result_id: str) -> str | None:
+    """The full text of an earlier tool result: from the transcript, else from the archive kept at compaction."""
+    if not result_id:
+        return None
+    for m in history:
+        for c in m["content"]:
+            if c.get("type") == "tool_result" and c.get("tool_use_id") == result_id:
+                return c["content"] if isinstance(c.get("content"), str) else json.dumps(c.get("content"), default=str)
+    for r in state.get(ARCHIVE_KEY) or []:
+        if r["id"] == result_id:
+            return r["result"]
+    return None
+
+
+ARCHIVE_KEY = "_result_archive"   # keys starting with "_" stay on the server (see public_state)
+
+
+def archive_results(old: list, state: dict) -> list[dict]:
+    """Before older turns are replaced by a summary, keep their tool results (newest first, within
+    RESULT_ARCHIVE_CHARS) so recall_result still finds them. Returns the entries kept from `old`."""
+    calls = {c["id"]: c for m in old for c in m["content"] if c.get("type") == "tool_use"}
+    new = []
+    for m in old:
+        for c in m["content"]:
+            call = calls.get(c.get("tool_use_id")) if c.get("type") == "tool_result" else None
+            if call and isinstance(c.get("content"), str) and not c.get("is_error") and call["name"] != "recall_result":
+                new.append({"id": call["id"], "tool": call["name"], "input": call["input"], "result": c["content"]})
+    kept, used = [], 0
+    for r in reversed((state.get(ARCHIVE_KEY) or []) + new):
+        used += len(r["result"])
+        if used > config.RESULT_ARCHIVE_CHARS:
+            break
+        kept.append(r)
+    kept.reverse()
+    state[ARCHIVE_KEY] = kept
+    ids = {r["id"] for r in kept}
+    return [r for r in new if r["id"] in ids]
+
+
+def public_state(state: dict) -> dict:
+    """The part of a chat's state the browser may see."""
+    return {k: v for k, v in state.items() if not k.startswith("_")}
 
 
 def repair_history(history: list) -> list:

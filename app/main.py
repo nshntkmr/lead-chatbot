@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import config, pricing, store
-from .agent import Agent, repair_history
+from .agent import Agent, public_state, repair_history
 from .data import Warehouse
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -159,7 +159,8 @@ def me(user: dict = Depends(current_user)):
     programs = [{"id": p["id"], "label": p["label"], "description": p["description"], "rows": p["rows"],
                  "columns": p["columns"], "sources": p["sources"], "suggestions": _suggestions(p["id"])}
                 for p in wh.programs.values()]
-    return {"user": user, "app_name": config.APP_NAME, "programs": programs}
+    return {"user": user, "app_name": config.APP_NAME, "programs": programs,
+            "effort": {"choices": config.EFFORT_CHOICES, "default": config.ANTHROPIC_EFFORT}}
 
 
 # ------------------------------------------------------- conversations ----
@@ -173,7 +174,7 @@ def conversation(cid: str, user: dict = Depends(current_user)):
     c = store.get_conversation(user["username"], cid)
     if not c:
         raise HTTPException(404)
-    return {"id": c["id"], "title": c["title"], "messages": c["ui_messages"], "state": c.get("state") or {}}
+    return {"id": c["id"], "title": c["title"], "messages": c["ui_messages"], "state": public_state(c.get("state") or {})}
 
 
 class RenameIn(BaseModel):
@@ -212,6 +213,7 @@ class ChatIn(BaseModel):
     message: str = Field(min_length=1, max_length=8000)
     conversation_id: str | None = None
     program: str | None = None   # required on the first message when more than one dataset is loaded
+    effort: str | None = None    # reasoning depth for this question; only the configured choices are honoured
 
 
 @app.post("/api/chat")
@@ -253,7 +255,8 @@ async def chat(body: ChatIn, user: dict = Depends(current_user)):
         turn = {"calls": 0, "tokens": 0, "cost_usd": 0.0, "unpriced": False}
         try:
             yield sse({"type": "conversation", "id": cid, "title": conv["title"], "program": state.get("program")})
-            async for ev in agent.run(api_msgs, body.message, state):
+            effort = body.effort if body.effort in config.EFFORT_CHOICES else None
+            async for ev in agent.run(api_msgs, body.message, state, effort=effort):
                 if ev["type"] == "text":
                     if not blocks or blocks[-1]["type"] != "text":
                         blocks.append({"type": "text", "text": ""})
@@ -276,7 +279,7 @@ async def chat(body: ChatIn, user: dict = Depends(current_user)):
                       "cost_usd": round(turn["cost_usd"], 4), "unpriced": turn["unpriced"]}
                 blocks.append(ub)
                 yield sse({"type": "block", "block": ub})
-            yield sse({"type": "state", "state": state})
+            yield sse({"type": "state", "state": public_state(state)})
         except Exception as e:
             log.exception("chat failed")
             msg = _friendly_error(e)

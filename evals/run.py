@@ -43,7 +43,7 @@ def _cost(msg) -> float:
                             n("cache_creation_input_tokens"), n("cache_read_input_tokens"))[0]
 
 
-async def run_case(agent: Agent, case: Case, sem: asyncio.Semaphore, use_judge: bool) -> dict:
+async def run_case(agent: Agent, case: Case, sem: asyncio.Semaphore, use_judge: bool, effort: str | None = None) -> dict:
     async with sem:
         history, state = [], {"program": case.program}
         result = {"id": case.id, "program": case.program, "turns": [], "cost_usd": 0.0, "judge_cost_usd": 0.0,
@@ -52,7 +52,7 @@ async def run_case(agent: Agent, case: Case, sem: asyncio.Semaphore, use_judge: 
         for turn in case.turns:
             text, blocks, error = "", [], None
             try:
-                async for ev in agent.run(history, turn.ask, state):
+                async for ev in agent.run(history, turn.ask, state, effort=effort):
                     if ev["type"] == "text":
                         text += ev["text"]
                     elif ev["type"] == "block":
@@ -114,6 +114,8 @@ def main() -> int:
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--concurrency", type=int, default=4)
     ap.add_argument("--no-judge", action="store_true", help="skip the model judge (a figure shown anywhere then counts)")
+    ap.add_argument("--effort", default="", choices=["", *config.EFFORT_LEVELS],
+                    help="reasoning depth for the answers (default: ANTHROPIC_EFFORT, else the model's own default)")
     args = ap.parse_args()
     if args.list:
         for c in CASES:
@@ -161,9 +163,10 @@ def main() -> int:
                 print("  The judge cannot be trusted on this model; chat results below are NOT evidence of correctness.")
         else:
             print("\nJudge skipped (--no-judge): a figure shown anywhere in the answer counts. Not evidence of correctness.")
-        print(f"\nChat cases: {len(cases)} against {config.ANTHROPIC_MODEL} ({config.CLAUDE_PROVIDER})")
+        print(f"\nChat cases: {len(cases)} against {config.ANTHROPIC_MODEL} ({config.CLAUDE_PROVIDER}), "
+              f"effort {args.effort or config.ANTHROPIC_EFFORT or 'model default'}")
         sem = asyncio.Semaphore(max(1, args.concurrency))
-        return await asyncio.gather(*(run_case(agent, c, sem, use_judge) for c in cases))
+        return await asyncio.gather(*(run_case(agent, c, sem, use_judge, args.effort or None) for c in cases))
 
     t0 = time.time()
     results = asyncio.run(go())

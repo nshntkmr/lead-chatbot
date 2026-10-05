@@ -110,7 +110,8 @@ CASES: list[Case] = [
               usd(21.4e6, "spending reduction needed to reach the 85% target (the portfolio misses the target)"),
               pct(91.6, "Aged & Disabled cohort MLR"), pct(101.7, "High Needs cohort MLR"), pct(106.6, "ESRD cohort MLR"),
               shows("table"), portfolio(5), target(0.85),
-              lacks(r"\bheadroom\b|\bslack\b|portfolio_metrics|run_sql")]),
+              lacks(r"\bheadroom\b|\bslack\b|portfolio_metrics|run_sql"),
+              lacks(r"no double-?counting|because all (five )?TINs show savings")]),
         Turn("Which TINs could I add to bring that portfolio to 85%?",
              [has("910214500|Optum Care Washington"), has("271081647|UNC Physicians"),
               pct(86.2, "combined MLR after adding Optum Care Washington (910214500) only"),
@@ -126,6 +127,85 @@ CASES: list[Case] = [
               usd(-336e3, "net shared result of the original five with expense 3% higher (negative: a shared loss)", rel=0.01),
               portfolio(5, 7), target(0.85)]),
     ]),
+    # Conditions beyond the suggestion filters: screened with SQL, then handed over as the candidate pool.
+    Case("A16", "LEAD", [
+        Turn(f"I have TINs {LEAD_FIVE}. My target is 85%.", [portfolio(5), target(0.85)]),
+        Turn("Which TINs could I add to reach 85%, looking only at TINs with at least 1,000 PY2027 assigned "
+             "beneficiaries, home-health utilization prevalence of 15% or more, and a positive projected net settlement?",
+             [count(94, "TINs that pass the three screening conditions", rel=0.03),
+              has("832740501|Physicians Services Group"), has("811998432|Healthstone"),
+              pct(87.0, "combined MLR after adding every qualifying TIN at or under 85% (the target is not reached)"),
+              has(r"(?i)not (be )?reach|cannot reach|can't reach|does not reach|doesn't reach|short of|falls short|not enough|still above|miss"),
+              portfolio(5), lacks(r"portfolio_suggest|run_sql|candidate_tins")]),
+    ]),
+    # A follow-up that leans on a result from two questions back, which is shortened in what the model sees by then.
+    Case("A17", "LEAD", [
+        Turn(f"I have TINs {LEAD_FIVE}. Which TINs could I add to bring that portfolio to 85%?",
+             [has("910214500|Optum Care Washington"), portfolio(5), target(0.85)]),
+        Turn('What does the column "ESRD" contain?', [has(r"(?i)label|caption|header|heading")]),
+        Turn("Going back to the candidates table you showed for the 85% target: which organization was 20th in that "
+             "table, and what were its benchmark and MLR?",
+             [has(r"(?i)474717998|Bozeman Health Deaconess"), usd(105.7e6, "benchmark of the 20th candidate in the table"),
+              pct(81.8, "MLR of the 20th candidate in the table"),
+              lacks(r"(?i)can(no|')t (verify|check|see)|no longer (have|see|available)|recall_result")]),
+    ]),
+    # A screen that returns more TINs (237) than one query result can list (200): it has to be tightened or ranked.
+    Case("A18", "LEAD", [
+        Turn(f"I have TINs {LEAD_FIVE}. My target is 85%.", [portfolio(5), target(0.85)]),
+        Turn("Which TINs could I add to reach 85%, looking only at TINs with at least 1,000 PY2027 assigned "
+             "beneficiaries, home-health utilization prevalence of 10% or more, and a positive projected net settlement?",
+             [count(237, "TINs that pass the three screening conditions", rel=0.02),
+              has("451444883|(?i)Access Health Care"), has("822410133|(?i)Upperline"),
+              count(4, "number of TINs in the plan that reaches the target"),
+              pct(84.4, "combined MLR after the additions that reach the target"),
+              portfolio(5), lacks(r"portfolio_suggest|run_sql|candidate_tins")]),
+    ]),
+    # ------------------------------------------------------------------ Part U — unfamiliar questions and follow-ups
+    # Questions the prompt and tools were NOT tuned on. Expected values were computed from the raw CSVs with pandas,
+    # independently of the app. Do not add prompt rules aimed at these wordings: a failure here should be fixed in
+    # tool output or general behaviour, or the case stops measuring anything.
+    one("U1", "LEAD", "How many TINs show gross savings but would still owe CMS money at settlement, and what share of "
+                      "the TINs with a benchmark is that?",
+        count(2689, "TINs with positive gross savings and a negative projected net settlement"),
+        pct(22.7, "share of the 11,846 TINs with a benchmark")),
+    one("U2", "LEAD", "On average, how much benchmark does a Low Spending TIN get per beneficiary per month compared "
+                      "with a High Spending one? Weight it properly.",
+        usd(1478.50, "person-year-weighted benchmark PBPM of Low Spending TINs"),
+        usd(1938.21, "person-year-weighted benchmark PBPM of High Spending TINs")),
+    Case("U3", "LEAD", [
+        Turn("Which three organizations have the most High Needs person-years?",
+             [has(r"(?i)340714585|Cleveland Clinic"), has(r"(?i)363738206|Endeavor Health"), has(r"(?i)941156581|Sutter Bay")]),
+        Turn("Treat those three as my portfolio. What are the combined MLR and gross savings?",
+             [pct(96.1, "combined MLR of the three TINs"), usd(170.9e6, "combined gross savings of the three TINs"), portfolio(3)]),
+        Turn("What if their costs come in 2% higher than projected?",
+             [pct(98.0, "combined MLR with expenses 2% higher"), usd(86.2e6, "gross savings with expenses 2% higher"),
+              portfolio(3)]),
+        Turn("Forget the 2% scenario. Take Sutter Bay out of my portfolio: what's the combined MLR of the remaining two?",
+             [pct(97.7, "base-case combined MLR of Cleveland Clinic and Endeavor Health"), portfolio(2)]),
+    ]),
+    one("U4", "LEAD", "What is the average age of the beneficiaries in each TIN?",
+        has(r"(?i)\b(no|not|isn't|doesn't|does not|cannot|can't|without)\b"), has(r"(?i)\bage\b"),
+        lacks(r"(?i)average age (is|of) \d")),
+    one("U5", "LEAD", "Which TIN has the lowest MLR, and is there anything about its numbers I should be wary of?",
+        has(r"(?i)760528826|Millennium Physicians"), pct(17.7, "MLR of the TIN with the lowest MLR"),
+        has(r"(?i)alignment|projected from|trend|person.years|beneficiar|small|tiny|thin")),
+    Case("U6", "LEAD", [
+        Turn("How many TINs have at least 5,000 PY2027 assigned beneficiaries?",
+             [count(645, "TINs with at least 5,000 PY2027 assigned beneficiaries")]),
+        Turn("Of those, how many are High Spending?", [count(120, "High Spending TINs among the 645")]),
+        Turn("And how does that group's combined MLR compare with the Low Spending ones of the same size?",
+             [pct(97.4, "combined MLR of the 120 High Spending TINs with 5,000+ beneficiaries"),
+              pct(94.1, "combined MLR of the 525 Low Spending TINs with 5,000+ beneficiaries")]),
+    ]),
+    Case("U7", "MSSP", [
+        Turn("How many TINs are projected to spend more than their benchmark, and what is their combined gross margin?",
+             [count(2205, "TINs with projected expenditures above benchmark"),
+              usd(-1.395e9, "combined gross margin of those TINs (negative: expenditures exceed benchmark)")]),
+        Turn("How many of those would still be over their benchmark if their costs came in 2% lower?",
+             [count(1405, "of the 2,205, TINs still above benchmark with expenditures 2% lower")]),
+    ]),
+    one("U8", "MSSP", "What share of all projected person-years sits in TINs whose expenditures exceed their benchmark?",
+        pct(20.8, "share of projected person-years in TINs with MLR above 100%")),
     one("A8", "LEAD", "Which TINs with at least 1,000 beneficiaries have the highest home-health utilization prevalence, "
                       "and what are their MLRs?",
         has("992506226|881934998|MVP Medical|Perpetual Mobile"),
